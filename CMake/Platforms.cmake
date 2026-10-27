@@ -39,6 +39,10 @@ elseif(WIN32)
   include(platforms/windows)
 endif()
 
+if(WIIU)
+  include(platforms/wiiu)
+endif()
+
 if(NINTENDO_SWITCH)
   include(platforms/switch)
 endif()
@@ -50,6 +54,7 @@ endif()
 if(NINTENDO_3DS)
   include(platforms/n3ds)
 endif()
+
 
 if(VITA)
   include("$ENV{VITASDK}/share/vita.cmake" REQUIRED)

@@ -1,5 +1,12 @@
 #include "lua/lua_global.hpp"
 
+#ifdef __WIIU__
+#include <coreinit/debug.h>
+#define DBG(fmt, ...) OSReport("LuaInit: " fmt "\n", ##__VA_ARGS__)
+#else
+#define DBG(fmt, ...) ((void)0)
+#endif
+
 #include <algorithm>
 #include <expected>
 #include <optional>
@@ -282,9 +289,16 @@ void LuaReloadActiveMods()
 
 void LuaInitialize()
 {
+	DBG("emplace");
 	CurrentLuaState.emplace();
+
+	DBG("sol");
 	sol::state &lua = CurrentLuaState->sol;
+
+	DBG("setwarnf");
 	lua_setwarnf(lua.lua_state(), LuaWarn, /*ud=*/nullptr);
+
+	DBG("open_libraries");
 	lua.open_libraries(
 	    sol::lib::base,
 	    sol::lib::coroutine,
@@ -296,9 +310,10 @@ void LuaInitialize()
 	    sol::lib::table,
 	    sol::lib::utf8);
 
-	// Registering devilutionx object table
+	DBG("safe_script RequireGenSrc");
 	SafeCallResult(lua.safe_script(RequireGenSrc), /*optional=*/false);
 
+	DBG("create_table_with");
 	CurrentLuaState->commonPackages = lua.create_table_with(
 #ifdef _DEBUG
 	    "devilutionx.dev", LuaDevModule(lua),
@@ -319,14 +334,18 @@ void LuaInitialize()
 	    // This package is loaded without a sandbox:
 	    "inspect", RunScript(/*env=*/std::nullopt, "inspect", /*optional=*/false));
 
-	// Used by the custom require implementation.
+	DBG("setEnvironment");
 	lua["setEnvironment"] = [](const sol::environment &env, const sol::function &fn) { sol::set_environment(env, fn); };
 
+	DBG("mod callbacks");
 	for (OptionEntryBase *mod : GetOptions().Mods.GetEntries()) {
 		mod->SetValueChangedCallback(LuaReloadActiveMods);
 	}
 
+	DBG("LuaReloadActiveMods");
 	LuaReloadActiveMods();
+
+	DBG("DONE");
 }
 
 void LuaShutdown()

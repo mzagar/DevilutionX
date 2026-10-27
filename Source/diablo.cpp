@@ -7,6 +7,13 @@
 #include <cstdint>
 #include <string_view>
 
+#ifdef __WIIU__
+#include <coreinit/debug.h>
+#define DBG(fmt, ...) OSReport("DiabloMain: " fmt "\n", ##__VA_ARGS__)
+#else
+#define DBG(fmt, ...) ((void)0)
+#endif
+
 #ifdef USE_SDL3
 #include <SDL3/SDL_events.h>
 #include <SDL3/SDL_init.h>
@@ -2758,26 +2765,30 @@ int DiabloMain(int argc, char **argv)
 	SDL_SetLogPriorities(SDL_LOG_PRIORITY_DEBUG);
 #endif
 
+	DBG("DiabloParseFlags");
 	DiabloParseFlags(argc, argv);
+
+	DBG("InitKeymapActions");
 	InitKeymapActions();
+
+	DBG("InitPadmapActions");
 	InitPadmapActions();
 
-	// Need to ensure devilutionx.mpq (and fonts.mpq if available) are loaded before attempting to read translation settings
+	DBG("LoadCoreArchives");
 	LoadCoreArchives();
 	was_archives_init = true;
 
-	// Read settings including translation next. This will use the presence of fonts.mpq and look for assets in devilutionx.mpq
+	DBG("LoadOptions");
 	LoadOptions();
 	if (demo::IsRunning()) demo::OverrideOptions();
 
-	// Then look for a voice pack file based on the selected translation
+	DBG("LoadLanguageArchive");
 	LoadLanguageArchive();
 
+	DBG("ApplicationInit");
 	ApplicationInit();
 
-	// Ensure the core archives are up to date before loading any assets from them,
-	// e.g. `lua\inspect.lua` is loaded during `LuaInitialize()` and would otherwise
-	// abort with a confusing "Asset not found" error on an out-of-date archive.
+	DBG("CheckArchivesUpToDate");
 	CheckArchivesUpToDate();
 
 	LuaInitialize();

@@ -67,6 +67,10 @@
 // for virtual keyboard on Switch
 #include "platform/switch/keyboard.h"
 #endif
+#ifdef __WIIU__
+// for virtual keyboard on Wii U
+#include "platform/wiiu/keyboard.hpp"
+#endif
 #ifdef __vita__
 // for virtual keyboard on Vita
 #include "platform/vita/keyboard.h"
@@ -220,6 +224,8 @@ void UiInitList(void (*fnFocus)(size_t value), void (*fnSelect)(size_t value), v
 			allowEmptyTextInput = pItemUIEdit->m_allowEmpty;
 #ifdef __SWITCH__
 			switch_start_text_input(pItemUIEdit->m_hint, pItemUIEdit->m_value, pItemUIEdit->m_max_length);
+#elif defined(__WIIU__)
+			wiiu_start_text_input(pItemUIEdit->m_hint, pItemUIEdit->m_value, pItemUIEdit->m_max_length);
 #elif defined(__vita__)
 			vita_start_text_input(pItemUIEdit->m_hint, pItemUIEdit->m_value, pItemUIEdit->m_max_length);
 #elif defined(__3DS__)

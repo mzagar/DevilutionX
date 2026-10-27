@@ -5,6 +5,9 @@
 #include <SDL_main.h>
 #endif
 
+#ifdef __WIIU__
+#include "platform/wiiu/init.hpp"
+#endif
 #ifdef __SWITCH__
 #include "platform/switch/network.h"
 #include "platform/switch/random.hpp"
@@ -35,6 +38,9 @@ extern "C" const char *__asan_default_options() // NOLINT(bugprone-reserved-iden
 
 extern "C" int main(int argc, char **argv)
 {
+#ifdef __WIIU__
+	wiiu_init();
+#endif
 #ifdef __SWITCH__
 	switch_romfs_init();
 	switch_enable_network();
