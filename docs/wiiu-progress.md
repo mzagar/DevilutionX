@@ -154,8 +154,14 @@ cat ~/Library/Application\ Support/Cemu/log.txt
 ### Poznati problemi
 
 1. **Keyboard/mouse ne radi** — SDL eventovi sa tastature/miša se ne processiraju.
-   Vjerovatno treba `VPADInit()` i/ili `KPADInit()` za Wii U gamepad emulaciju,
-   ili SDL event loop nije povezan sa Cemu-ovim input sistemom.
+   ~~Vjerovatno treba `VPADInit()` i/ili `KPADInit()` za Wii U gamepad emulaciju,
+   ili SDL event loop nije povezan sa Cemu-ovim input sistemom.~~
+   ✅ **RIJEŠENO** — keyboard radi kad se mapira kao Controller 1 (GamePad) u Cemu Input Settings.
+
+2. **Text input (swkbd) ne potvrđuje unos** — Wii U sistemska swkbd ima buggy ✓
+   na Cemu 2.6 macOS. Tipke rade, backspace radi, ali ✓ ne zatvara dijalog.
+   ✅ **RIJEŠENO** — kreiran `keyboard.cpp` koji preskače swkbd i koristi
+   direktno SDL_TEXTINPUT eventove (kao PC verzija).
 
 2. **Assetovi moraju biti na SD kartici** — ne rade iz WUHB content direktorija
    (CWD nije `/content/`). Trebalo bi riješiti da rade i iz WUHB-a.
