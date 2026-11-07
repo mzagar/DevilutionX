@@ -23,9 +23,14 @@
  *      <sd>/diablo.ini, <sd>/save_*.sv
  *
  *    This is the historical behaviour and stays the fallback.
+ *
+ * Everything reported here is also written to `boot-diag.txt` on the SD card.
+ * OSReport is not visible on real hardware without extra tooling, so that file
+ * is the only way to find out what happened when a boot fails there.
  */
 #include "platform/wiiu/init.hpp"
 
+#include <cstdarg>
 #include <cstdio>
 #include <string>
 
@@ -37,9 +42,6 @@
 
 #ifdef __WIIU__
 #include <coreinit/debug.h>
-#define DBG(fmt, ...) OSReport("WIIUINIT: " fmt "\n", ##__VA_ARGS__)
-#else
-#define DBG(fmt, ...) ((void)0)
 #endif
 
 #include "utils/paths.h"
@@ -50,6 +52,77 @@ namespace {
 constexpr const char *ContentAssetsPath = "/vol/content/assets";
 /// Writable directory on the SD card (created on first run).
 constexpr const char *SdDataPath = "/vol/external01/wiiu/apps/devilutionx";
+/// Name of the SD-card copy of the boot log.
+constexpr const char *DiagFileName = "boot-diag.txt";
+
+// ---------------------------------------------------------------------------
+// Diagnostics
+// ---------------------------------------------------------------------------
+
+/// Collects everything reported during boot so it can be dumped to the SD card.
+std::string &DiagBuffer()
+{
+	static std::string buffer;
+	return buffer;
+}
+
+/// Reports a diagnostic line to OSReport *and* keeps it for `boot-diag.txt`.
+///
+/// Note that OSReport's printf is not a full C library: length modifiers such
+/// as `%zu` and `%lu` are unsupported and swallow the rest of the line, so
+/// always cast to `int` and use `%d`.
+void Diag(const char *fmt, ...)
+{
+	char line[512];
+	va_list args;
+	va_start(args, fmt);
+	vsnprintf(line, sizeof(line), fmt, args);
+	va_end(args);
+
+#ifdef __WIIU__
+	OSReport("WIIUINIT: %s\n", line);
+#endif
+
+	DiagBuffer() += line;
+	DiagBuffer() += '\n';
+}
+
+/// Writes the collected diagnostics to the SD card, so a failed boot can be
+/// diagnosed without any logging hardware attached. Tries the data directory
+/// first and falls back to the SD card root, which always exists.
+void DiagFlushToSd()
+{
+	const std::string candidates[] = {
+		std::string(SdDataPath) + "/" + DiagFileName,
+		std::string("/vol/external01/") + DiagFileName,
+	};
+
+	for (const std::string &path : candidates) {
+		FILE *file = fopen(path.c_str(), "wb");
+		if (file == nullptr)
+			continue;
+		std::string content = DiagBuffer();
+		content += "(this file: '";
+		content += path;
+		content += "')\n";
+		const bool ok = fwrite(content.data(), 1, content.size(), file) == content.size();
+		fclose(file);
+		if (ok)
+			return;
+		remove(path.c_str());
+	}
+
+	Diag("could not write boot diagnostics to the SD card");
+}
+
+void DiagHeader()
+{
+	SDL_version version;
+	SDL_GetVersion(&version);
+	Diag("=== DevilutionX Wii U boot diagnostics ===");
+	Diag("build: %s %s (init.cpp)", __DATE__, __TIME__);
+	Diag("SDL: %d.%d.%d", version.major, version.minor, version.patch);
+}
 
 // ---------------------------------------------------------------------------
 // Filesystem helpers
@@ -89,7 +162,7 @@ bool EnsureDir(const std::string &path)
 	}
 	const bool ok = DirExists(path);
 	if (!ok)
-		DBG("could not create '%s'", path.c_str());
+		Diag("could not create '%s'", path.c_str());
 	return ok;
 }
 
@@ -105,66 +178,65 @@ bool IsWritableDir(const std::string &path)
 	return true;
 }
 
-// ---------------------------------------------------------------------------
-// Diagnostics
-// ---------------------------------------------------------------------------
-
 void LogExists(const char *label, const char *path)
 {
-	DBG("  %-28s '%s' -> %s", label, path, FileExists(path) ? "YES" : "no");
+	Diag("  %-28s '%s' -> %s", label, path, FileExists(path) ? "YES" : "no");
 }
 
 void ListDir(const char *path, int maxEntries = 16)
 {
 	DIR *dir = opendir(path);
 	if (dir == nullptr) {
-		DBG("  listdir '%s' -> FAILED", path);
+		Diag("  listdir '%s' -> FAILED", path);
 		return;
 	}
 	int n = 0;
 	while (struct dirent *ent = readdir(dir)) {
 		if (++n > maxEntries) {
-			DBG("  listdir '%s' -> ... (truncated at %d)", path, maxEntries);
+			Diag("  listdir '%s' -> ... (truncated at %d)", path, maxEntries);
 			break;
 		}
-		DBG("    [%d] %s", static_cast<int>(ent->d_type), ent->d_name);
+		Diag("    [%d] %s", static_cast<int>(ent->d_type), ent->d_name);
 	}
 	closedir(dir);
 	if (n == 0)
-		DBG("  listdir '%s' -> empty", path);
+		Diag("  listdir '%s' -> empty", path);
 }
 
 void LogEnvironment()
 {
-	DBG("=== Wii U environment ===");
+	Diag("=== Wii U environment ===");
 
 	char cwd[512];
-	DBG("  cwd = '%s'", getcwd(cwd, sizeof(cwd)) != nullptr ? cwd : "(FAILED)");
+	Diag("  cwd = '%s'", getcwd(cwd, sizeof(cwd)) != nullptr ? cwd : "(FAILED)");
 
 	char *base = SDL_GetBasePath();
-	DBG("  SDL_GetBasePath = '%s'", base != nullptr ? base : "(null)");
+	Diag("  SDL_GetBasePath = '%s'", base != nullptr ? base : "(null)");
 	SDL_ClearError();
 	if (base != nullptr)
 		SDL_free(base);
 
 	char *pref = SDL_GetPrefPath("diasurgical", "devilution");
-	DBG("  SDL_GetPrefPath = '%s'", pref != nullptr ? pref : "(null)");
+	Diag("  SDL_GetPrefPath = '%s'", pref != nullptr ? pref : "(null)");
 	SDL_ClearError();
 	if (pref != nullptr)
 		SDL_free(pref);
 
-	DBG("  -- volumes --");
+	Diag("  -- volumes --");
 	LogExists("content mount", "/vol/content");
 	LogExists("content/assets", ContentAssetsPath);
 	LogExists("content/assets/spawn.mpq", "/vol/content/assets/spawn.mpq");
 	LogExists("sd root", "/vol/external01");
 	LogExists("sd data dir (ours)", SdDataPath);
+	LogExists("save volume", "/vol/save");
 	LogExists("cwd-relative assets", "assets");
 	LogExists("cwd-relative spawn.mpq", "spawn.mpq");
 
-	DBG("  -- listing /vol/content --");
+	Diag("  -- listing /vol --");
+	ListDir("/vol");
+	Diag("  -- listing /vol/content --");
 	ListDir("/vol/content");
-	DBG("  -- listing /vol/external01 --");
+	Diag("  -- listing /vol/external01 --");
 	ListDir("/vol/external01");
 }
 
@@ -178,12 +250,12 @@ void SetupPaths()
 	if (DirExists(ContentAssetsPath)) {
 		devilution::paths::SetAssetsPath(ContentAssetsPath);
 		devilution::paths::SetBasePath(ContentAssetsPath);
-		DBG("assets: using WUHB content mount '%s'", ContentAssetsPath);
+		Diag("assets: using WUHB content mount '%s'", ContentAssetsPath);
 	} else {
 		// `paths::AssetsPath()` defaults to "assets/" and `paths::BasePath()` to "",
 		// i.e. both are relative to the CWD, which is the SD card root for
 		// plain SD-card builds. Nothing to do.
-		DBG("assets: no content mount, using CWD-relative paths");
+		Diag("assets: no content mount, using CWD-relative paths");
 	}
 
 	// --- writable data (config, saves, mods, screenshots) --------------------
@@ -191,9 +263,9 @@ void SetupPaths()
 	if (EnsureDir(dataDir) && IsWritableDir(dataDir)) {
 		devilution::paths::SetPrefPath(dataDir);
 		devilution::paths::SetConfigPath(dataDir);
-		DBG("pref/config: using '%s'", dataDir.c_str());
+		Diag("pref/config: using '%s'", dataDir.c_str());
 	} else {
-		DBG("pref/config: SD data dir unusable, using CWD-relative paths");
+		Diag("pref/config: SD data dir unusable, using CWD-relative paths");
 	}
 }
 
@@ -201,6 +273,7 @@ void SetupPaths()
 
 void wiiu_init()
 {
+	DiagHeader();
 	LogEnvironment();
 	SetupPaths();
 	wiiu_log_paths();
@@ -208,15 +281,22 @@ void wiiu_init()
 
 void wiiu_log_paths()
 {
-	DBG("=== resolved devilution paths ===");
-	DBG("  BasePath   = '%s'", devilution::paths::BasePath().c_str());
-	DBG("  AssetsPath = '%s'", devilution::paths::AssetsPath().c_str());
-	DBG("  PrefPath   = '%s'", devilution::paths::PrefPath().c_str());
-	DBG("  ConfigPath = '%s'", devilution::paths::ConfigPath().c_str());
+	// Called once from wiiu_init() and once from diablo.cpp after ApplicationInit(),
+	// so label the second pass instead of repeating the section verbatim.
+	static bool loggedOnce = false;
+	Diag("=== resolved devilution paths%s ===", loggedOnce ? " (re-checked after ApplicationInit)" : "");
+	loggedOnce = true;
 
-	// Late probe: on real hardware `/vol/save` is the per-title save volume. It is
-	// not available on Cemu, but if it shows up here it is a better place for saves
-	// than the SD card. Not used yet — this only records whether it exists.
-	DBG("  /vol/save exists=%s writable=%s", FileExists("/vol/save") ? "yes" : "no",
+	Diag("  BasePath   = '%s'", devilution::paths::BasePath().c_str());
+	Diag("  AssetsPath = '%s'", devilution::paths::AssetsPath().c_str());
+	Diag("  PrefPath   = '%s'", devilution::paths::PrefPath().c_str());
+	Diag("  ConfigPath = '%s'", devilution::paths::ConfigPath().c_str());
+
+	// On real hardware `/vol/save` is the per-title save volume. It does not exist
+	// on Cemu, but if it shows up it is a better place for saves than the SD card.
+	// Not used yet — this only records whether it is there.
+	Diag("  /vol/save exists=%s writable=%s", FileExists("/vol/save") ? "yes" : "no",
 	    DirExists("/vol/save") && IsWritableDir("/vol/save") ? "yes" : "no");
+
+	DiagFlushToSd();
 }
