@@ -473,5 +473,8 @@ uwp-project/Assets/ui_art
 
 # Temporary directory for prep scripts and other purposes.
 /tmp/
+
+# Retail game data extracted from the GOG installer (see tools/wiiu/extract-gog-mpqs.sh)
+/gog-mpq/
 /compile_commands.json
 /tools/tmp
