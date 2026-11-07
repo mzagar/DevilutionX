@@ -6,10 +6,15 @@
 
 ## Where we are
 
-Diablo (Shareware) **runs and is playable on a real Wii U under Aroma, and on
-Cemu 2.6.0 on macOS, from the same self-contained Aroma-layout WUHB** — display,
-assets, keyboard/mouse, text input, audio (SFX + music), gameplay and savegames
-all work, and nothing is written to the SD card root.
+Diablo **runs and is playable on a real Wii U under Aroma, and on Cemu 2.6.0 on
+macOS, from the same self-contained Aroma-layout WUHB** — display, assets,
+keyboard/mouse, text input, audio (SFX + music), gameplay and savegames all
+work, and nothing is written to the SD card root.
+
+**Both the shareware and the full game (Diablo + Hellfire) work.** The shareware
+data is packaged inside the WUHB so the port boots out of the box; drop the
+retail MPQs next to the WUHB for the full game — see
+[Full game + Hellfire](#-full-game--hellfire) below.
 
 **Real hardware was validated on 7 Nov 2026** (see below). Development stays
 Cemu-first because that loop is much faster; the Wii U is for confirming
@@ -41,6 +46,8 @@ grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
   `tools/wiiu/package-wuhb.sh` builds a self-contained ~41 MB WUHB.
 - **Real hardware (Aroma)** — the same WUHB boots on a Wii U, mounts its content
   at `/vol/content`, resolves identical paths, and plays with audio + saves
+- **Full game + Hellfire** — `DIABDAT.MPQ` + the four `hellfire.mpq`/`hf*.mpq`
+  files are picked up from the SD data directory, with intro cinematics
 - Build/package pipeline + the Cemu `tweq` workaround, both scripted in `tools/wiiu/`
 
 ## ⚠️ Two things that will bite you
@@ -84,6 +91,71 @@ The only two differences from Cemu, both cosmetic:
 
 So one artifact serves both, and the Cemu-first workflow stays trustworthy. Full
 evidence: [`wiiu-progress.md`](wiiu-progress.md#9-real-hardware-aroma-verified-on-7-nov-2026).
+
+## 🎮 Full game + Hellfire
+
+The shareware `spawn.mpq` is packaged inside the WUHB so the port boots out of
+the box. The **full game works too** — verified on Cemu on 7 Nov 2026 with
+`gbIsSpawn=0 HaveIntro=1 HaveHellfire=1`.
+
+Copy these next to the WUHB on the SD card (`sd:/wiiu/apps/devilutionx/`):
+
+| File | Size | What it is |
+|------|------|------------|
+| `DIABDAT.MPQ` | 493 MiB | base game data |
+| `hellfire.mpq` | 62 MiB | Hellfire data |
+| `hfmonk.mpq` | 36 MiB | Hellfire Monk class |
+| `hfmusic.mpq` | 33 MiB | Hellfire music |
+| `hfvoice.mpq` | 36 MiB | Hellfire voice lines |
+
+`Patch_rt.mpq` and `DRTL_IX86_108_109.mpq` are **not** needed — DevilutionX has
+its own fixes and never reads them. `hfbard.mpq`/`hfbarb.mpq` (Bard/Barbarian
+classes) are optional extras the GOG installer does not ship; without them
+`HaveBardAssets`/`HaveBarbarianAssets` are simply false.
+
+Extract them from the GOG "Diablo + Hellfire" installer:
+
+```bash
+tools/wiiu/extract-gog-mpqs.sh \
+  ~/Downloads/setup_diablo_1.09_hellfire_v4_\(78466\).exe ./gog-mpq
+```
+
+The GOG installer is an **Inno Setup** archive, so this needs `innoextract`. The
+script falls back to running it in a throwaway Docker container. Prefer that:
+Homebrew has no bottle for this formula's `boost` dependency, so `brew install
+innoextract` builds boost from source and takes the better part of an hour.
+
+Then copy them across:
+
+```bash
+DEST=~/Library/Application\ Support/Cemu/sdcard/wiiu/apps/devilutionx   # Cemu
+# DEST=/Volumes/<SD>/wiiu/apps/devilutionx                              # real card
+cp gog-mpq/*.mpq "$DEST/"
+```
+
+### Diablo vs Hellfire
+
+`DIABDAT.MPQ` alone gives the full (non-shareware) Diablo. The Hellfire MPQs add
+the expansion. Which one you play is the `Game` key in `diablo.ini`:
+
+| `[GameMode] Game` | Meaning |
+|---|---|
+| `0` | Ask — shows an *Enter Hellfire* / *Switch to Diablo* dialog at startup when the Hellfire MPQs are present |
+| `1` | Hellfire |
+| `2` | Diablo |
+
+The option is `OptionEntryFlags::Invisible` in `Source/options.cpp`, so it is
+**not** in the settings menu — edit `diablo.ini`, or start once with `Game=0`
+and use the dialog. A fresh card starts at `0`.
+
+### Why the MPQs go next to the WUHB
+
+`GetMPQSearchPaths()` (`Source/engine/assets.cpp:441`) searches BasePath →
+PrefPath → ConfigPath → CWD. On Wii U that is `/vol/content/assets/` (read-only,
+inside the WUHB), `/vol/external01/wiiu/apps/devilutionx/`, and the SD root — so
+the data directory is the only sensible place. `DIABDAT.MPQ` is tried before
+`spawn.mpq`, so it takes priority automatically and the bundled shareware stays
+as a fallback.
 
 ## Boot diagnostics
 
@@ -149,8 +221,12 @@ After that: **network** (`NONET=OFF` + `nsysnet`, mirroring
 ```
 devilutionx.wuhb
 └── /content/assets/…        read-only, mounted at /vol/content/assets
+                             (spawn.mpq + fonts/data/…, the shareware fallback)
 
 sd:/wiiu/apps/devilutionx/   writable, created on first run
+├── devilutionx.wuhb         on the real card (launched from here)
+├── DIABDAT.MPQ              optional: full game data
+├── hellfire.mpq + hf*.mpq   optional: Hellfire expansion
 ├── diablo.ini
 ├── save_0.sv
 └── boot-diag.txt            <- rewritten on every boot, see above
@@ -176,6 +252,7 @@ sd:/wiiu/apps/devilutionx/   writable, created on first run
 | `tools/wiiu/wiiu-run.sh` | Build → package → run → log |
 | `tools/wiiu/package-wuhb.sh` | Packages the self-contained Aroma-layout WUHB |
 | `tools/wiiu/cemu-tweq-workaround.py` | Cemu `tweq` workaround |
+| `tools/wiiu/extract-gog-mpqs.sh` | Pulls the retail MPQs out of the GOG installer |
 | `Packaging/wiiu/icon.png` | 128×128 WUHB icon |
 | `docs/wiiu-progress.md` | Full technical reference |
 
@@ -192,6 +269,8 @@ sd:/wiiu/apps/devilutionx/   writable, created on first run
 | Assets source | `build-wiiu-clean/assets/` (packaged into the WUHB) |
 | Data on SD | `sd:/wiiu/apps/devilutionx/` (`diablo.ini`, `save_*.sv`, `boot-diag.txt`) |
 | Real SD card (tested) | `sd:/wiiu/apps/devilutionx/devilutionx.wuhb` — same layout as Cemu, nothing else needed |
+| GOG installer | `~/Downloads/setup_diablo_1.09_hellfire_v4_(78466).exe` (850 MB, Inno Setup 5.6.2) |
+| Extracted retail MPQs | `gog-mpq/` in the repo root (gitignored) |
 
 ## Notes for whoever continues
 

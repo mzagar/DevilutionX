@@ -6,14 +6,16 @@
 
 ## Status (7 Nov 2026)
 
-**Diablo (Shareware) runs on a real Wii U under Aroma, and on Cemu 2.6.0 on
-macOS, from the same self-contained Aroma-layout WUHB** — video, assets, input,
-text input, audio, gameplay, savegames and config all work, with nothing written
-to the SD card root.
+**Diablo (shareware and full) runs on a real Wii U under Aroma, and on Cemu
+2.6.0 on macOS, from the same self-contained Aroma-layout WUHB** — video,
+assets, input, text input, audio, gameplay, savegames and config all work, with
+nothing written to the SD card root.
 
 Real hardware was validated on 7 Nov 2026 — see
-[finding 9](#9-real-hardware-aroma-verified-on-7-nov-2026). Remaining work is
-network, plus the cleanup/polish list in [Next steps](#next-steps).
+[finding 9](#9-real-hardware-aroma-verified-on-7-nov-2026) — and the retail game
+data plus Hellfire were verified on Cemu on 7 Nov 2026 — see
+[finding 10](#10-full-game--hellfire-data). Remaining work is network, plus the
+cleanup/polish list in [Next steps](#next-steps).
 
 | Area | State | Notes |
 |------|-------|-------|
@@ -25,6 +27,7 @@ network, plus the cleanup/polish list in [Next steps](#next-steps).
 | Savegames / config | ✅ | Written to `/vol/external01/wiiu/apps/devilutionx/` |
 | Lua scripting | ✅ | Needs `LUA_USE_C89` on PowerPC |
 | Self-contained WUHB | ✅ | ~41 MB WUHB: game + `assets/` inside `/content/` |
+| Full game + Hellfire | ✅ | Retail MPQs next to the WUHB; `gbIsSpawn=0`, intro cinematics, Hellfire data — see [finding 10](#10-full-game--hellfire-data) |
 | Boot diagnostics | ✅ | `boot-diag.txt` on the SD card — OSReport without extra tooling |
 | Network / multiplayer | ❌ | `NONET=ON`, no `nsysnet` init yet |
 | Real hardware (Aroma) | ✅ | Validated 7 Nov 2026 — same WUHB, same resolved paths as Cemu |
@@ -221,6 +224,84 @@ SDL: 2.32.10
 `sd:/wiiu/apps/devilutionx/diablo.ini` by itself, and grew the migrated save
 (`spawn_1.sv`, 202,444 → 299,956 bytes) after a play + save cycle — so config
 writing, saving and loading are all confirmed on hardware, not just on Cemu.
+
+### 10. Full game + Hellfire data
+
+The shareware `spawn.mpq` is bundled inside the WUHB, so the port boots with no
+extra files. The **full game and the Hellfire expansion also work** — verified
+on Cemu on 7 Nov 2026.
+
+**Where the MPQs go.** `GetMPQSearchPaths()` (`Source/engine/assets.cpp:441`)
+builds its list from `paths::BasePath()`, `paths::PrefPath()` and
+`paths::ConfigPath()` (dropping duplicates) and then appends the CWD. On Wii U
+that resolves to:
+
+1. `/vol/content/assets/` — read-only, inside the WUHB
+2. `/vol/external01/wiiu/apps/devilutionx/` — our data directory
+3. `""` — the CWD, `fs:/vol/external01`, i.e. the SD card root
+
+So the retail MPQs belong in the data directory next to the WUHB. `LoadMPQ()`
+tries `<path>DIABDAT.MPQ` first, then `diabdat.mpq`, and only falls back to
+`spawn.mpq` when neither exists — the bundled shareware therefore stays a
+harmless fallback rather than being shadowed.
+
+**Getting them.** The GOG "Diablo + Hellfire" installer
+(`setup_diablo_1.09_hellfire_v4_(78466).exe`, 850 MB) is an **Inno Setup 5.6.2**
+archive. `tools/wiiu/extract-gog-mpqs.sh` pulls out the five files we need:
+
+| File | Size |
+|------|------|
+| `DIABDAT.MPQ` | 517,501,282 B |
+| `hellfire.mpq` | 65,502,336 B |
+| `hfmonk.mpq` | 37,658,368 B |
+| `hfmusic.mpq` | 34,379,360 B |
+| `hfvoice.mpq` | 37,743,520 B |
+
+Not needed: `Patch_rt.mpq` — DevilutionX applies its own fixes and never reads
+it (there is no reference to it anywhere in `Source/`) — nor
+`DRTL_IX86_108_109.mpq`, the 1.08→1.09 patch, which is already applied.
+`hfbard.mpq`/`hfbarb.mpq` are Bard/Barbarian extras that GOG does not ship, so
+`HaveBardAssets`/`HaveBarbarianAssets` are simply false.
+
+**Two gotchas on the way:**
+
+- **Homebrew's `innoextract` is a trap.** It depends on `boost`, which has no
+  bottle for this Homebrew, so `brew install innoextract` builds boost from
+  source — the better part of an hour (and an interrupted attempt leaves a
+  `boost …tmp` keg behind). Running `innoextract` inside a throwaway Debian
+  Docker container takes about two minutes, which is what the script does when
+  `innoextract` is not on `PATH`.
+- **Do not try to carve the MPQs out of the installer by scanning for the
+  `MPQ\x1a` magic.** It is tempting — the installer contains seven occurrences —
+  but they are all false positives inside the compressed data. The proper check
+  is to decrypt the hash table with `HashString("(hash table)", 3)` and look up
+  a known file name; every naive candidate fails it (their block tables claim
+  extents of 6–8 GB inside an 850 MB file).
+
+**Verification.** With the MPQs in place, a temporary `DBG` line after
+`LoadGameArchives()` in `Source/diablo.cpp` reports:
+
+```
+DiabloMain: gbIsSpawn=0 HaveIntro=1 HaveHellfire=1 HaveBardAssets=0
+```
+
+- `gbIsSpawn=0` — `DIABDAT.MPQ` was loaded, so this is the full game
+- `HaveIntro=1` — `gendata\diablo1.smk` exists, i.e. **the intro cinematic only
+  exists in the full game**. Shareware shows the Blizzard logo and goes straight
+  to the menu; the code even special-cases it, `menu.cpp` does
+  `if (gbIsSpawn && !HaveIntro()) done = false;`, which is why "Replay Intro"
+  does nothing there
+- `HaveHellfire=1` — `hellfire.mpq` was found (`HasHellfireMpq` is set by
+  `FindMPQ(paths, "hellfire")` in `LoadCoreArchives()`)
+
+**Diablo vs Hellfire** is the `Game` key in `diablo.ini` (`StartUpGameMode`:
+`Ask=0`, `Hellfire=1`, `Diablo=2`). It is `OptionEntryFlags::Invisible` in
+`Source/options.cpp`, so it does **not** appear in the settings menu. With `Ask`
+and the Hellfire MPQs present, `DiabloInit()` calls `UiSelStartUpGameOption()`
+(`Source/diablo.cpp:1301`), which shows an *Enter Hellfire* / *Switch to
+Diablo* dialog and saves the choice. `Hellfire` is migrated to `Diablo` plus
+`Mods.SetHellfireEnabled(true)`, so both `0` and `1` end up enabling the
+expansion.
 
 ## Build pipeline
 
@@ -491,6 +572,8 @@ CWD-relative fallback paths, while still writing the file.
      the `if(WIIU)` block)
    - the now-redundant `-DLUA_USE_C89` in `CMake/platforms/wiiu.cmake` (the fix
      lives in `3rdParty/Lua/CMakeLists.txt`)
+   - the temporary `gbIsSpawn=… HaveIntro=… HaveHellfire=…` `DBG` line in
+     `Source/diablo.cpp` (added for [finding 10](#10-full-game--hellfire-data))
 2. **Network** (`NONET=OFF` + `nsysnet` init, mirroring
    `Source/platform/switch/network.cpp`). Note the test SD card already has the
    `Inkay-pretendo` module and plugin installed, which may matter for testing.
@@ -511,4 +594,5 @@ CWD-relative fallback paths, while still writing the file.
 | Nov 2026 | Audio enabled (`NOSOUND=OFF`). Hang during the first sfx traced to Cemu's broken `tweq`; workaround written and validated. Sound confirmed working in-game. Docs rewritten to match reality; build/run tooling moved into `tools/wiiu/`. |
 | Nov 2026 | Aroma-layout packaging. Found that SDL2 for Wii U has no filesystem backend (`SDL_GetBasePath()`/`SDL_GetPrefPath()` always `NULL`). `wiiu_init()` now resolves the paths: assets from the WUHB content mount (`/vol/content/assets`), writable data in `sd:/wiiu/apps/devilutionx/`. `package-wuhb.sh` produces a self-contained 41 MB WUHB; verified on Cemu with the SD card root emptied. |
 | Nov 2026 | Added `boot-diag.txt`: `wiiu_init()` mirrors its OSReport output to a file on the SD card, so a failed boot on real hardware can be diagnosed without any logging setup. Verified on Cemu both with and without a content mount. |
+| Nov 2026 | **Full game + Hellfire work.** Pulled `DIABDAT.MPQ` and the four Hellfire MPQs out of the GOG Inno Setup installer (`tools/wiiu/extract-gog-mpqs.sh`, running `innoextract` in Docker because Homebrew would have built `boost` from source). They sit next to the WUHB in the SD data directory, which `GetMPQSearchPaths()` already covers. Verified on Cemu: `gbIsSpawn=0 HaveIntro=1 HaveHellfire=1`, intro cinematics present, no errors. Also documented the `Game` key in `diablo.ini` for the Diablo/Hellfire choice. |
 | Nov 2026 | **Real hardware (Aroma) validation passed.** The same WUHB booted on a Wii U: Aroma mounts the content at `/vol/content` exactly like Cemu and all four paths resolve identically. Gameplay, audio, save and load confirmed. `/vol/save` turned out to *exist* on hardware (Aroma redirects it to `sd:/wiiu/apps/save/B12DEFFB (DevilutionX)/`, unused) — the last open question from the packaging work. |

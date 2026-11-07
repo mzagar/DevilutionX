@@ -18,12 +18,15 @@ Nastavljamo rad na Wii U portu DevilutionX-a u `/Users/mario/work/wiiu/Devilutio
 1. `docs/wiiu-handoff.md` — gdje smo, što je sljedeće, kako se builda i pokreće
 2. `docs/wiiu-progress.md` — tehnički detalji, root causes, pitfalls
 
-**Kontekst u jednoj rečenici:** Diablo Shareware radi i na **pravom Wii U-u pod
-Aromom** i na Cemu 2.6.0 macOS (display, asseti, tipkovnica, text input, zvuk,
-gameplay, savegame) iz **istog** self-contained WUHB-a u Aroma layoutu — asseti
-su unutar WUHB-a (`/vol/content/assets`), a zapisi idu u
-`sd:/wiiu/apps/devilutionx/`. Pravi hardver je validiran 7. 11. 2026.; razvoj
-dalje ide **Cemu-first** jer je brži, a Wii U služi za potvrdu milestona.
+**Kontekst u jednoj rečenici:** Diablo radi i na **pravom Wii U-u pod Aromom** i
+na Cemu 2.6.0 macOS (display, asseti, tipkovnica, text input, zvuk, gameplay,
+savegame) iz **istog** self-contained WUHB-a u Aroma layoutu — asseti su unutar
+WUHB-a (`/vol/content/assets`), a zapisi idu u `sd:/wiiu/apps/devilutionx/`.
+Radii i **shareware i puna igra (Diablo + Hellfire)**: retail MPQ-ovi
+(`DIABDAT.MPQ` + `hellfire.mpq`/`hf*.mpq`) se samo stave u isti direktorij
+(`tools/wiiu/extract-gog-mpqs.sh` ih izvadi iz GOG installera). Pravi hardver je
+validiran 7. 11. 2026.; razvoj dalje ide **Cemu-first** jer je brži, a Wii U
+služi za potvrdu milestona.
 
 **Dvije stvari koje će te ugristi ako ih zaboraviš:**
 1. **Cemu `tweq` bug** — Cemu trapira `tweq` i kad uvjet nije ispunjen, a GCC to
