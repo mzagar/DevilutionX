@@ -3,7 +3,8 @@ set(ASAN OFF)
 set(UBSAN OFF)
 set(BUILD_TESTING OFF)
 set(NONET ON)
-set(NOSOUND ON)
+# Sound is enabled: the devkitPro SDL2 Wii U port provides an AX audio driver
+# (SDL_wiiuaudio.c) and DevilutionX uses the bundled static SDL_audiolib.
 set(BUILD_ASSETS_MPQ OFF)
 
 set(DEVILUTIONX_SYSTEM_SDL2 ON)
