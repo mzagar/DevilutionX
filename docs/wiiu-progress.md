@@ -22,6 +22,7 @@ Not done yet: real-hardware test, network.
 | Savegames / config | ✅ | Written to `/vol/external01/wiiu/apps/devilutionx/` |
 | Lua scripting | ✅ | Needs `LUA_USE_C89` on PowerPC |
 | Self-contained WUHB | ✅ | ~41 MB WUHB: game + `assets/` inside `/content/` |
+| Boot diagnostics | ✅ | `boot-diag.txt` on the SD card — OSReport without extra tooling |
 | Network / multiplayer | ❌ | `NONET=ON`, no `nsysnet` init yet |
 | Real hardware (Aroma) | ⏳ | Untested by choice — Cemu first |
 
@@ -256,6 +257,10 @@ If the data dir cannot be created or written to, both paths fall back to `""`
 `ApplicationInit()` and dumps the four resolved paths plus a probe of
 `/vol/save`, so the log always shows which layout was picked.
 
+Everything `wiiu_init()` reports is additionally written to
+[`boot-diag.txt`](#boot-diagnostics-boot-diagtxt) on the SD card, which is the
+only way to see it on real hardware.
+
 ### Layouts on disk
 
 **WUHB (Aroma / Cemu, the shipped artifact):**
@@ -266,7 +271,8 @@ devilutionx.wuhb
 
 sd:/wiiu/apps/devilutionx/   writable, created on first run
 ├── diablo.ini
-└── save_0.sv
+├── save_0.sv
+└── boot-diag.txt            rewritten on every boot
 ```
 
 **Plain SD card (dev builds, no content mount):**
@@ -301,7 +307,7 @@ build): `spawn.mpq`, `ASSETS_VERSION`, `fonts/`, `ui_art/`, `lua/`,
 | File | Role |
 |------|------|
 | `Source/main.cpp` | `#ifdef __WIIU__` → `wiiu_init()` |
-| `Source/platform/wiiu/init.cpp` | `wiiu_init()` — environment log + path setup |
+| `Source/platform/wiiu/init.cpp` | `wiiu_init()` — environment log, path setup, `boot-diag.txt` |
 | `Source/platform/wiiu/keyboard.cpp` | Text input, bypasses system swkbd |
 | `Source/platform/wiiu/stub.cpp` | Empty placeholder — **unused, can be deleted** |
 | `Source/platform/wiiu/CMakeLists.txt` | Platform object library |
@@ -336,7 +342,7 @@ Current instrumentation:
 |------|-------|---------|
 | `Source/diablo.cpp` | `DBG` | `DiabloInit` step markers |
 | `Source/lua/lua_global.cpp` | `DBG` | `LuaInitialize` step markers |
-| `Source/platform/wiiu/init.cpp` | `DBG` | Environment dump + resolved paths |
+| `Source/platform/wiiu/init.cpp` | `Diag()` | Environment dump + resolved paths (also written to `boot-diag.txt`) |
 | `Source/engine/sound.cpp` | `SND_DBG` | Audio load / `Aulib::init` tracing |
 | `Source/utils/soundsample.cpp` | `SMPL_DBG` | `SoundSample::SetChunk` tracing |
 | `Source/effects.cpp` | `SFX_DBG` | SFX load tracing (per-file — verbose, slows loading) |
@@ -348,6 +354,34 @@ still being debugged actively. Remove them before any upstream PR.
 
 > Cemu's `log.txt` is **rewritten** on every run, not appended — don't compare
 > line counts between runs.
+
+### Boot diagnostics (`boot-diag.txt`)
+
+OSReport is **not visible on real hardware** without extra tooling (UDP logger,
+serial), so `wiiu_init()` mirrors everything it reports into a file on the SD
+card:
+
+```
+sd:/wiiu/apps/devilutionx/boot-diag.txt     (fallback: sd:/boot-diag.txt)
+```
+
+The fallback is used when the data directory cannot be created (e.g. write-
+protected SD card), and is the reason the file's own path is printed as the last
+line. The file is **overwritten on every boot**.
+
+In `init.cpp` the `DBG` macro is therefore replaced by `Diag()`, which both
+`OSReport`s and appends to a buffer; `DiagFlushToSd()` writes that buffer out. It
+is called from `wiiu_log_paths()`, i.e. once during `wiiu_init()` and once after
+`ApplicationInit()` — so a boot that dies later still leaves a file behind.
+
+This is the primary hardware bring-up tool: if the game does not start on a real
+Wii U, this file says whether the content mount was available, which paths were
+picked, and whether the SD card is writable.
+
+Verified on Cemu both ways: with a content mount, and with `devilutionx.rpx` run
+directly (no content) — the latter correctly reports
+`content mount '/vol/content' -> no`, `listdir '/vol/content' -> FAILED` and the
+CWD-relative fallback paths, while still writing the file.
 
 ## Pitfalls
 
@@ -365,11 +399,15 @@ still being debugged actively. Remove them before any upstream PR.
 | Two log lines glued together | OSReport printf: don't use `%zu` / `%lu` |
 | Whole-file diff after editing | File is CRLF in git; don't let the editor rewrite endings |
 | Black screen, no errors | Missing `assets/ASSETS_VERSION` (fails the version check) |
+| Game does not start on real hardware | Read `sd:/wiiu/apps/devilutionx/boot-diag.txt` first — see [Boot diagnostics](#boot-diagnostics-boot-diagtxt) |
 
 ## Next steps
 
-1. **Real hardware (Aroma) validation** (current task) — needs the user's Wii U;
-   OSReport over UDP/serial.
+1. **Real hardware (Aroma) validation** (current task) — needs the user's Wii U.
+   `boot-diag.txt` removes the need for OSReport capture: copy the WUHB to
+   `sd:/wiiu/apps/devilutionx/`, boot, and read the file. The open question is
+   whether Aroma mounts the WUHB content at `/vol/content` (verified on Cemu,
+   assumed on hardware).
 2. **Clean up**: the throwaway `tweq` test blocks in `Source/engine/sound.cpp`, the
    per-file `SFX_DBG` spam, `Source/platform/wiiu/stub.cpp` (unused), the
    CRLF-only churn in the top-level `CMakeLists.txt`, and the now-redundant
@@ -391,3 +429,4 @@ still being debugged actively. Remove them before any upstream PR.
 | Oct 2026 | Input "not working" traced to Cemu input settings, not code. Docs left stale. |
 | Nov 2026 | Audio enabled (`NOSOUND=OFF`). Hang during the first sfx traced to Cemu's broken `tweq`; workaround written and validated. Sound confirmed working in-game. Docs rewritten to match reality; build/run tooling moved into `tools/wiiu/`. |
 | Nov 2026 | Aroma-layout packaging. Found that SDL2 for Wii U has no filesystem backend (`SDL_GetBasePath()`/`SDL_GetPrefPath()` always `NULL`). `wiiu_init()` now resolves the paths: assets from the WUHB content mount (`/vol/content/assets`), writable data in `sd:/wiiu/apps/devilutionx/`. `package-wuhb.sh` produces a self-contained 41 MB WUHB; verified on Cemu with the SD card root emptied. |
+| Nov 2026 | Added `boot-diag.txt`: `wiiu_init()` mirrors its OSReport output to a file on the SD card, so a failed boot on real hardware can be diagnosed without any logging setup. Verified on Cemu both with and without a content mount. |

@@ -41,12 +41,16 @@ tools/wiiu/wiiu-run.sh 40 --no-build   # samo re-run
 grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 ```
 
-**Sljedeći zadatak:** validacija na pravom hardveru (Wii U + Aroma) — vidi
-`docs/wiiu-handoff.md` → "Next task".
+**Sljedeći zadatak:** validacija na pravom hardveru (Wii U + Aroma). Kopiraj
+`build-wiiu-release/devilutionx.wuhb` u `sd:/wiiu/apps/devilutionx/` i nakon
+boota pročitaj `sd:/wiiu/apps/devilutionx/boot-diag.txt` — tu piše je li content
+mount bio dostupan i koje su putanje odabrane (OSReport na hardveru ne vidimo
+bez dodatne opreme). Detalji: `docs/wiiu-handoff.md` → "Next task".
 
 **Pravila rada:**
 - Debug output (OSReport `DBG`/`SND_DBG`/`SMPL_DBG`/`SFX_DBG`) **ostaje u treeu**
-  — to nam je glavni alat za debugiranje
+  — to nam je glavni alat za debugiranje. Na Wii U-u (`init.cpp`) se zove `Diag()`
+  i osim u OSReport piše i u `boot-diag.txt` na SD kartici
 - OSReport printf **ne podržava** `%zu`/`%lu` — koristi `%d` s castovima
 - Dio fajlova je CRLF u gitu (`.gitattributes` ima `* -text`) — ne daj editoru
   da prepiše line endings

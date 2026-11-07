@@ -58,21 +58,61 @@ grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 **Goal:** run the packaged WUHB on a real Wii U with Aroma and confirm it behaves
 the same as on Cemu.
 
-1. Copy `build-wiiu-release/devilutionx.wuhb` to `sd:/wiiu/apps/` on the Wii U.
+1. Copy `build-wiiu-release/devilutionx.wuhb` to `sd:/wiiu/apps/devilutionx/` on
+   the Wii U. **Nothing else is needed** — the assets are inside the WUHB.
 2. Launch it from the Wii U Menu (Aroma) and check: main menu, input, audio,
    starting a game, saving, and that `sd:/wiiu/apps/devilutionx/` receives
    `diablo.ini` + save files.
-3. Get OSReport off the console (UDP or serial) — the `WIIUINIT` lines state
-   which layout was picked and what the resolved paths are.
+3. **Read `sd:/wiiu/apps/devilutionx/boot-diag.txt`.** It is written on every
+   boot, so no OSReport capture (UDP/serial) is needed to see what happened.
 
 Things to watch for:
 
+- If the game does not start, **`boot-diag.txt` is the first thing to look at**.
+  If it says `content mount '/vol/content' -> no`, then Aroma did not mount the
+  WUHB content and the mount point in `wiiu_init()` needs fixing. If it says
+  `pref/config: SD data dir unusable`, the SD card is not writable.
 - The `tweq` workaround is **not needed** on real hardware (it is a Cemu bug),
   but the patched binary is safe to run there anyway: the NOPped guard is an
   unreachable 2³¹-overflow check.
 - `/vol/save` is the per-title save volume on real hardware and would be a
-  better home for saves than the SD card. `wiiu_log_paths()` already logs
-  `exists=`/`writable=` for it — check the hardware log before changing anything.
+  better home for saves than the SD card. `boot-diag.txt` already records
+  `exists=`/`writable=` for it — check it before changing anything.
+
+### Boot diagnostics
+
+`wiiu_init()` writes everything it reports to `boot-diag.txt` on the SD card
+(`sd:/wiiu/apps/devilutionx/boot-diag.txt`, falling back to `sd:/boot-diag.txt`
+if the data directory cannot be created). OSReport is invisible on real hardware
+without extra tooling, so this file is the only way to debug a failed boot there.
+It contains:
+
+```
+=== DevilutionX Wii U boot diagnostics ===
+build: Nov  7 2026 20:09:32 (init.cpp)   <- identifies which build is on the card
+SDL: 2.32.10
+=== Wii U environment ===
+  cwd = 'fs:/vol/external01'
+  SDL_GetBasePath = '(null)'             <- expected: SDL has no fs backend
+  -- volumes --
+  content mount                '/vol/content' -> YES
+  content/assets/spawn.mpq     '/vol/content/assets/spawn.mpq' -> YES
+  save volume                  '/vol/save' -> no
+  -- listing /vol --
+    [4] storage_mlc01
+    [4] content
+    [4] external01
+assets: using WUHB content mount '/vol/content/assets'
+pref/config: using '/vol/external01/wiiu/apps/devilutionx'
+=== resolved devilution paths ===
+  BasePath   = '/vol/content/assets/'
+  ...
+(this file: '/vol/external01/wiiu/apps/devilutionx/boot-diag.txt')
+```
+
+The resolved-paths section appears twice: once during `wiiu_init()` and once
+re-checked after `ApplicationInit()`. The file is **overwritten on every boot**,
+so read it before relaunching.
 
 ## ℹ️ How the packaging works
 
@@ -82,7 +122,8 @@ devilutionx.wuhb
 
 sd:/wiiu/apps/devilutionx/   writable, created on first run
 ├── diablo.ini
-└── save_0.sv
+├── save_0.sv
+└── boot-diag.txt            <- rewritten on every boot, see above
 ```
 
 - SDL2 for Wii U has **no filesystem backend** — `SDL_GetBasePath()` and
@@ -96,7 +137,7 @@ sd:/wiiu/apps/devilutionx/   writable, created on first run
 
 | File | Role |
 |------|------|
-| `Source/platform/wiiu/init.cpp` | `wiiu_init()` — environment log + path setup |
+| `Source/platform/wiiu/init.cpp` | `wiiu_init()` — environment log + path setup + `boot-diag.txt` |
 | `Source/platform/wiiu/keyboard.cpp` | Text input, bypasses system swkbd |
 | `Source/utils/paths.cpp` | Base/assets/pref path resolution (SDL) |
 | `Source/main.cpp` | Calls `wiiu_init()` |
@@ -119,7 +160,7 @@ sd:/wiiu/apps/devilutionx/   writable, created on first run
 | devkitPro | `/opt/devkitpro` (`elf2rpl`, `wuhbtool` in `tools/bin`) |
 | Build dir | `build-wiiu-release` |
 | Assets source | `build-wiiu-clean/assets/` (packaged into the WUHB) |
-| Data on SD | `sd:/wiiu/apps/devilutionx/` (`diablo.ini`, `save_*.sv`) |
+| Data on SD | `sd:/wiiu/apps/devilutionx/` (`diablo.ini`, `save_*.sv`, `boot-diag.txt`) |
 
 ## Notes for whoever continues
 
