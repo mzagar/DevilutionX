@@ -49,6 +49,7 @@
 #include "discord/discord.h"
 #include "doom.h"
 #include "encrypt.h"
+#include "engine/assets.hpp"
 #include "engine/backbuffer_state.hpp"
 #include "engine/clx_sprite.hpp"
 #include "engine/demomode.h"
@@ -2808,6 +2809,8 @@ int DiabloMain(int argc, char **argv)
 
 	// Finally load game data
 	LoadGameArchives();
+	DBG("gbIsSpawn=%d HaveIntro=%d HaveHellfire=%d HaveBardAssets=%d",
+	    gbIsSpawn ? 1 : 0, HaveIntro() ? 1 : 0, HaveHellfire() ? 1 : 0, HaveBardAssets() ? 1 : 0);
 
 	LoadTextData();
 
