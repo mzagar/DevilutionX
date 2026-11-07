@@ -32,6 +32,13 @@
 #include "utils/math.h"
 #include "utils/stubs.h"
 
+#ifdef __WIIU__
+#include <coreinit/debug.h>
+#define SMPL_DBG(msg) OSReport("Sample: " msg "\n")
+#else
+#define SMPL_DBG(msg) ((void)0)
+#endif
+
 namespace devilution {
 
 namespace {
@@ -363,6 +370,7 @@ int SoundSample::SetChunkStream(std::string filePath, bool isMp3, bool logErrors
 
 int SoundSample::SetChunk(ArraySharedPtr<std::uint8_t> fileData, std::size_t dwBytes, bool isMp3)
 {
+	SMPL_DBG("SetChunk entered");
 #ifdef USE_SDL3
 	isMp3_ = isMp3;
 	file_data_ = std::move(fileData);
@@ -388,18 +396,23 @@ int SoundSample::SetChunk(ArraySharedPtr<std::uint8_t> fileData, std::size_t dwB
 	isMp3_ = isMp3;
 	file_data_ = std::move(fileData);
 	file_data_size_ = dwBytes;
+	SMPL_DBG("SetChunk: file data assigned");
 	SDL_IOStream *buf = SDL_IOFromConstMem(file_data_.get(), static_cast<int>(dwBytes));
+	SMPL_DBG("SetChunk: IOFromConstMem called");
 	if (buf == nullptr) {
 		return -1;
 	}
+	SMPL_DBG("SetChunk: IOFromConstMem ok");
 
 	stream_ = CreateStream(buf, isMp3_);
+	SMPL_DBG("SetChunk: CreateStream done");
 	if (!stream_->open()) {
 		stream_ = nullptr;
 		file_data_ = nullptr;
 		LogError(LogCategory::Audio, "Aulib::Stream::open (from SoundSample::SetChunk): {}", SDL_GetError());
 		return -1;
 	}
+	SMPL_DBG("SetChunk: open done");
 
 	return 0;
 #endif

@@ -23,6 +23,13 @@
 #include "player.h"
 #include "utils/is_of.hpp"
 
+#ifdef __WIIU__
+#include <coreinit/debug.h>
+#define SFX_DBG(fmt, ...) OSReport("Sfx: " fmt "\n", ##__VA_ARGS__)
+#else
+#define SFX_DBG(fmt, ...) ((void)0)
+#endif
+
 namespace devilution {
 
 int sfxdelay;
@@ -162,8 +169,13 @@ void PrivSoundInit(uint8_t bLoadMask)
 		return;
 	}
 
-	if (sgSFX.empty()) LoadEffectsData();
+	if (sgSFX.empty()) {
+		SFX_DBG("LoadEffectsData begin");
+		LoadEffectsData();
+		SFX_DBG("LoadEffectsData done count=%d", static_cast<int>(sgSFX.size()));
+	}
 
+	SFX_DBG("PrivSoundInit mask=%x begin", bLoadMask);
 	for (auto &sfx : sgSFX) {
 		if (sfx.bFlags == 0 || sfx.pSnd != nullptr) {
 			continue;
@@ -177,8 +189,11 @@ void PrivSoundInit(uint8_t bLoadMask)
 			continue;
 		}
 
+		SFX_DBG("loading '%s'", sfx.pszName.c_str());
 		sfx.pSnd = sound_file_load(sfx.pszName.c_str());
+		SFX_DBG("loaded '%s'", sfx.pszName.c_str());
 	}
+	SFX_DBG("PrivSoundInit mask=%x done", bLoadMask);
 }
 
 } // namespace

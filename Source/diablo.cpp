@@ -1288,9 +1288,11 @@ void DiabloInit()
 	}
 
 #ifndef USE_SDL1
+	DBG("InitializeVirtualGamepad");
 	InitializeVirtualGamepad();
 #endif
 
+	DBG("UiInitialize");
 	UiInitialize();
 	was_ui_init = true;
 
@@ -1305,11 +1307,16 @@ void DiabloInit()
 		}
 	}
 
+	DBG("DiabloInitScreen");
 	DiabloInitScreen();
 
+	DBG("snd_init");
 	snd_init();
+	DBG("snd_init done");
 
+	DBG("ui_sound_init");
 	ui_sound_init();
+	DBG("ui_sound_init done");
 
 	// Item graphics are loaded early, they already get touched during hero selection.
 	InitItemGFX();

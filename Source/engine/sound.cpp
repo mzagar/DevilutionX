@@ -6,6 +6,7 @@
 #include "engine/sound.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
@@ -37,6 +38,13 @@
 #include "utils/str_cat.hpp"
 #include "utils/stubs.h"
 
+#ifdef __WIIU__
+#include <coreinit/debug.h>
+#define SND_DBG(fmt, ...) OSReport("Sound: " fmt "\n", ##__VA_ARGS__)
+#else
+#define SND_DBG(fmt, ...) ((void)0)
+#endif
+
 namespace devilution {
 
 bool gbSndInited;
@@ -66,14 +74,18 @@ std::string GetMp3Path(const char *path)
 
 std::expected<void, std::string> LoadAudioFile(const char *path, bool stream, SoundSample &result)
 {
+	SND_DBG("LoadAudioFile begin '%s' stream=%d", path, stream);
 	bool isMp3 = true;
 	std::string foundPath = GetMp3Path(path);
+	SND_DBG("FindAsset mp3 '%s'", foundPath.c_str());
 	AssetRef ref = FindAsset(foundPath.c_str());
 	if (!ref.ok()) {
+		SND_DBG("mp3 not found, trying '%s'", path);
 		ref = FindAsset(path);
 		foundPath = path;
 		isMp3 = false;
 	}
+	SND_DBG("FindAsset done ok=%d size=%d", ref.ok(), static_cast<int>(ref.ok() ? ref.size() : 0));
 	if (!ref.ok()) {
 		return std::unexpected(StrCat("Audio file not found\n", path, "\n", SDL_GetError(), "\n" __FILE__ ":", __LINE__));
 	}
@@ -98,15 +110,35 @@ std::expected<void, std::string> LoadAudioFile(const char *path, bool stream, So
 #if !defined(STREAM_ALL_AUDIO_MIN_FILE_SIZE) || STREAM_ALL_AUDIO_MIN_FILE_SIZE == 0
 		const size_t size = ref.size();
 #endif
+		SND_DBG("OpenAsset begin '%s'", foundPath.c_str());
 		AssetHandle handle = OpenAsset(std::move(ref));
+		SND_DBG("OpenAsset done ok=%d", handle.ok());
 		if (!handle.ok()) {
 			return std::unexpected(StrCat("Failed to load audio file\n", foundPath, "\n", SDL_GetError(), "\n" __FILE__ ":", __LINE__));
 		}
 		auto waveFile = MakeArraySharedPtr<std::uint8_t>(size);
+		SND_DBG("read begin size=%d", static_cast<int>(size));
 		if (!handle.read(waveFile.get(), size)) {
 			return std::unexpected(StrCat("Failed to read file\n", foundPath, ": ", SDL_GetError(), __FILE__ ":", __LINE__));
 		}
+		SND_DBG("read done");
+		SND_DBG("SetChunk begin isMp3=%d size=%d", isMp3, static_cast<int>(size));
+		SND_DBG("about to call SetChunk");
+		{
+			std::atomic<int> dbgAtomicTest { 0 };
+			SND_DBG("atomic test begin");
+			dbgAtomicTest.fetch_add(1, std::memory_order_acq_rel);
+			SND_DBG("atomic test done val=%d", dbgAtomicTest.load());
+		}
+		{
+			volatile int trapTestA = 5;
+			volatile int trapTestB = 7;
+			SND_DBG("trap test begin (5 vs 7, must NOT trap)");
+			if (trapTestA == trapTestB) __builtin_trap();
+			SND_DBG("trap test survived");
+		}
 		const int error = result.SetChunk(waveFile, size, isMp3);
+		SND_DBG("SetChunk returned error=%d", error);
 		if (error != 0) {
 			return std::unexpected(SDL_GetError());
 		}
@@ -278,10 +310,14 @@ void snd_init()
 		return;
 	}
 #else
+	SND_DBG("Aulib::init begin");
 	if (!Aulib::init(*GetOptions().Audio.sampleRate, AUDIO_S16, *GetOptions().Audio.channels, *GetOptions().Audio.bufferSize, *GetOptions().Audio.device)) {
+		SND_DBG("Aulib::init FAILED: %s", SDL_GetError());
 		LogError(LogCategory::Audio, "Failed to initialize audio (Aulib::init): {}", SDL_GetError());
 		return;
 	}
+	SND_DBG("Aulib::init done rate=%d channels=%d frameSize=%d format=%x",
+	    Aulib::sampleRate(), Aulib::channelCount(), Aulib::frameSize(), Aulib::sampleFormat());
 	LogVerbose(LogCategory::Audio, "Aulib sampleRate={} channels={} frameSize={} format={:#x}",
 	    Aulib::sampleRate(), Aulib::channelCount(), Aulib::frameSize(), Aulib::sampleFormat());
 #endif
