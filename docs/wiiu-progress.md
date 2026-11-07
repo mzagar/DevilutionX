@@ -6,22 +6,23 @@
 
 ## Status (7 Nov 2026)
 
-**Diablo (Shareware) is fully playable on Cemu 2.6.0 on macOS** — video, assets,
-input, text input, audio, gameplay and savegames all work.
+**Diablo (Shareware) is fully playable on Cemu 2.6.0 on macOS, from a
+self-contained Aroma-layout WUHB** — video, assets, input, text input, audio,
+gameplay and savegames all work, with nothing written to the SD card root.
 
-Not done yet: **Aroma-layout packaging** (next task), real-hardware test, network.
+Not done yet: real-hardware test, network.
 
 | Area | State | Notes |
 |------|-------|-------|
 | Boot / display | ✅ | SDL/GX2 renderer, main menu + in-game rendering |
-| Assets | ✅ | Read from the emulated SD card root (`/vol/external01`) |
+| Assets | ✅ | Read from the WUHB content mount (`/vol/content/assets`) |
 | Keyboard / mouse | ✅ | Works once mapped to Controller 1 (GamePad) in Cemu input settings |
 | Text input | ✅ | `keyboard.cpp` bypasses the system swkbd |
 | Audio (SFX + music) | ✅ | SDL2 Wii U **AX** audio driver + bundled SDL_audiolib |
-| Savegames / config | ✅ | `spawn_0.sv`, `diablo.ini` written to the SD card root |
+| Savegames / config | ✅ | Written to `/vol/external01/wiiu/apps/devilutionx/` |
 | Lua scripting | ✅ | Needs `LUA_USE_C89` on PowerPC |
+| Self-contained WUHB | ✅ | ~41 MB WUHB: game + `assets/` inside `/content/` |
 | Network / multiplayer | ❌ | `NONET=ON`, no `nsysnet` init yet |
-| Self-contained WUHB | ❌ | Assets currently live next to the WUHB on the SD card, not inside it |
 | Real hardware (Aroma) | ⏳ | Untested by choice — Cemu first |
 
 ## Quick start (build → package → run)
@@ -122,6 +123,33 @@ with **CRLF**. Editing those files with tools that normalize to LF produces a
 whole-file diff. Convert back to CRLF before committing, or keep the editor
 from rewriting the file.
 
+### 8. SDL2 for Wii U has no filesystem backend
+
+`libSDL2.a` for Wii U is built with the **dummy** filesystem backend. Verified by
+disassembling the object file:
+
+```bash
+cd /tmp && mkdir sdl2x && cd sdl2x
+/opt/devkitpro/devkitPPC/bin/powerpc-eabi-ar x /opt/devkitpro/portlibs/wiiu/lib/libSDL2.a
+/opt/devkitpro/devkitPPC/bin/powerpc-eabi-objdump -dr SDL_sysfilesystem.o
+```
+
+Both functions are three instructions: `SDL_Error(SDL_UNSUPPORTED)` (code 4)
+and `return NULL`. So on Wii U **`SDL_GetBasePath()` and `SDL_GetPrefPath()`
+always return NULL**, and `Source/utils/paths.cpp` silently falls back to the
+generic `#else` branch:
+
+| Function | Value before the packaging fix |
+|----------|-------------------------------|
+| `BasePath()` | `""` |
+| `AssetsPath()` | `"assets/"` |
+| `PrefPath()` / `ConfigPath()` | `""` |
+
+That is why the game used to work only when the CWD happened to be the SD card
+root, and why it wrote saves and `diablo.ini` next to the game data. Nothing is
+broken in SDL — the Wii U port simply never implemented these two calls, so the
+port has to resolve its paths itself (`Source/platform/wiiu/init.cpp`).
+
 ## Build pipeline
 
 ```bash
@@ -133,14 +161,12 @@ make -j4
 # 2. Cemu workaround — MUST run before elf2rpl (see finding 1)
 python3 ../tools/wiiu/cemu-tweq-workaround.py devilutionx.elf
 
-# 3. Convert + package
-/opt/devkitpro/tools/bin/elf2rpl devilutionx.elf devilutionx.rpx
-/opt/devkitpro/tools/bin/wuhbtool devilutionx.rpx devilutionx_sd.wuhb \
-  --name "DevilutionX" --author "Devilution Team"
+# 3. Convert + package as a self-contained Aroma-layout WUHB
+../tools/wiiu/package-wuhb.sh        # elf2rpl + wuhbtool --content
 
 # 4. Run
 "/Applications/Cemu.app/Contents/MacOS/Cemu" \
-  -g "$PWD/devilutionx_sd.wuhb" -m /Users/mario/work/wiiu/cemu-mlc
+  -g "$PWD/devilutionx.wuhb" -m /Users/mario/work/wiiu/cemu-mlc
 ```
 
 All of this is wrapped by `tools/wiiu/wiiu-run.sh`.
@@ -180,51 +206,102 @@ Cemu's AX emulation feeds the host via Cubeb.
 | File | Size | Purpose |
 |------|------|---------|
 | `build-wiiu-release/devilutionx.elf` | ~200 MB | Unstripped ELF, input to `elf2rpl` only |
-| `build-wiiu-release/devilutionx.rpx` | ~3.8 MB | Wii U executable |
-| `build-wiiu-release/devilutionx_sd.wuhb` | ~3.8 MB | WUHB **without** assets — assets sit on the SD card |
+| `build-wiiu-release/devilutionx.rpx` | ~3.9 MB | Wii U executable |
+| `build-wiiu-release/devilutionx.wuhb` | ~41 MB | Self-contained WUHB: RPX + `assets/` in `/content/` + meta/icon |
+
+`tools/wiiu/package-wuhb.sh` stages the assets into a temp dir as
+`assets/…` and hands that to `wuhbtool --content`, so the WUHB ends up with
+`/content/assets/…` and nothing else. It refuses to package if
+`<assets>/spawn.mpq` is missing, because such a WUHB would boot to an error
+dialog.
 
 ## Runtime layout
 
 ### Path resolution
 
-`Source/platform/wiiu/init.cpp` is currently a **no-op** (`void wiiu_init() {}`,
-still called from `Source/main.cpp:42`). Nothing calls `paths::SetBasePath()` on
-Wii U, so all paths come from SDL in `Source/utils/paths.cpp`:
+`Source/platform/wiiu/init.cpp` resolves everything by hand, because SDL gives
+us nothing on Wii U (see [finding 8](#8-sdl2-for-wii-u-has-no-filesystem-backend)).
+`wiiu_init()` runs before `DiabloMain()` and does two things: log the
+environment, then set the paths.
 
-| Function | Wii U value |
-|----------|-------------|
-| `BasePath()` | `SDL_GetBasePath()` |
-| `AssetsPath()` | `BasePath() + "assets/"` (the generic `#else` branch) |
-| `PrefPath()` / `ConfigPath()` | `SDL_GetPrefPath("diasurgical", "devilution")`, **but reset to `""`** if a writable `diablo.ini` exists in the CWD |
+**Assets** — if `/vol/content/assets` exists (i.e. the WUHB was packaged with
+`--content`), it is used; otherwise the historical CWD-relative layout is kept:
 
-Observed behaviour is consistent with `BasePath() == "/vol/external01/"`: assets
-are found at the SD root and `diablo.ini` / `spawn_0.sv` are written there.
+| Layout | `BasePath()` | `AssetsPath()` |
+|--------|--------------|----------------|
+| WUHB (`/vol/content/assets` exists) | `/vol/content/assets/` | `/vol/content/assets/` |
+| Plain SD card (fallback) | `""` | `"assets/"` |
 
-> ⚠️ This is **inferred from behaviour, not logged**. Logging the four paths via
-> OSReport is the first item of the packaging task.
+> `BasePath()` and `AssetsPath()` are the same directory in the WUHB layout
+> because `spawn.mpq` lives inside `assets/`. The MPQ lookup
+> (`GetMPQSearchPaths()` in `Source/engine/assets.cpp`) only searches
+> `BasePath()`/`PrefPath()`/`ConfigPath()`/CWD, so the alternative would be
+> duplicating the 24 MB MPQ at the content root.
+
+**Writable data** — `/vol/external01/wiiu/apps/devilutionx/` is created on first
+run (recursively, then verified with a real write+delete probe, because
+`access()` is unreliable on FAT) and used for both `PrefPath()` and
+`ConfigPath()`:
+
+| What | Where |
+|------|-------|
+| `diablo.ini` | `<data dir>/diablo.ini` |
+| Savegames | `<data dir>/save_*.sv` |
+| Mods, demos, screenshots | `<data dir>/…` |
+
+If the data dir cannot be created or written to, both paths fall back to `""`
+(CWD).
+
+`wiiu_log_paths()` is also called from `Source/diablo.cpp` after
+`ApplicationInit()` and dumps the four resolved paths plus a probe of
+`/vol/save`, so the log always shows which layout was picked.
+
+### Layouts on disk
+
+**WUHB (Aroma / Cemu, the shipped artifact):**
+
+```
+devilutionx.wuhb
+└── /content/assets/…        read-only, mounted at /vol/content/assets
+
+sd:/wiiu/apps/devilutionx/   writable, created on first run
+├── diablo.ini
+└── save_0.sv
+```
+
+**Plain SD card (dev builds, no content mount):**
+
+```
+sd:/
+├── devilutionx_sd.wuhb (or .rpx via a loader)
+├── assets/…                 ← legacy, still supported
+└── wiiu/apps/devilutionx/   ← writes always land here now
+```
 
 ### Emulated SD card
 
-`~/Library/Application Support/Cemu/sdcard/` → `/vol/external01/`
+`~/Library/Application Support/Cemu/sdcard/` → `/vol/external01/`, CWD for the
+guest is `/vol/external01`.
+
+After packaging work the SD root holds **only** the data directory:
 
 ```
-assets/            # copied from a clean build's assets/ dir
-spawn.mpq          # Shareware game data (must be at the SD root)
-diablo.ini         # written by the game
-spawn_0.sv         # savegame
-devilutionx_sd.wuhb
+wiiu/apps/devilutionx/{diablo.ini, spawn_0.sv}
 ```
 
-Assets to copy (from `build-wiiu-clean/assets/`): `ASSETS_VERSION`, `fonts/`,
-`ui_art/`, `lua/`, `lua_internal/`, `data/`, `txtdata/`, `gendata/`, `arena/`,
-`plrgfx/`, `*.gmo` translations.
+Older setups kept `assets/`, `spawn.mpq`, `diablo.ini` and `spawn_0.sv` at the
+SD root; that still works as a fallback but is no longer needed.
+
+Assets are packaged from `build-wiiu-clean/assets/` (a `BUILD_ASSETS_MPQ=ON`
+build): `spawn.mpq`, `ASSETS_VERSION`, `fonts/`, `ui_art/`, `lua/`,
+`lua_internal/`, `data/`, `txtdata/`, `gendata/`, `arena/`, `plrgfx/`, `*.gmo`.
 
 ### Source map
 
 | File | Role |
 |------|------|
 | `Source/main.cpp` | `#ifdef __WIIU__` → `wiiu_init()` |
-| `Source/platform/wiiu/init.cpp` | `wiiu_init()` — currently empty |
+| `Source/platform/wiiu/init.cpp` | `wiiu_init()` — environment log + path setup |
 | `Source/platform/wiiu/keyboard.cpp` | Text input, bypasses system swkbd |
 | `Source/platform/wiiu/stub.cpp` | Empty placeholder — **unused, can be deleted** |
 | `Source/platform/wiiu/CMakeLists.txt` | Platform object library |
@@ -232,7 +309,9 @@ Assets to copy (from `build-wiiu-clean/assets/`): `ASSETS_VERSION`, `fonts/`,
 | `CMake/platforms/wiiu.cmake` | Platform build config |
 | `3rdParty/Lua/CMakeLists.txt` | `WIIU` in the `LUA_USE_C89` list |
 | `tools/wiiu/wiiu-run.sh` | Build → package → run → log helper |
+| `tools/wiiu/package-wuhb.sh` | Packages the self-contained Aroma-layout WUHB |
 | `tools/wiiu/cemu-tweq-workaround.py` | Cemu `tweq` workaround |
+| `Packaging/wiiu/icon.png` | 128×128 WUHB icon (from `Packaging/resources/icon.png`) |
 
 ## Debug logging (OSReport)
 
@@ -257,6 +336,7 @@ Current instrumentation:
 |------|-------|---------|
 | `Source/diablo.cpp` | `DBG` | `DiabloInit` step markers |
 | `Source/lua/lua_global.cpp` | `DBG` | `LuaInitialize` step markers |
+| `Source/platform/wiiu/init.cpp` | `DBG` | Environment dump + resolved paths |
 | `Source/engine/sound.cpp` | `SND_DBG` | Audio load / `Aulib::init` tracing |
 | `Source/utils/soundsample.cpp` | `SMPL_DBG` | `SoundSample::SetChunk` tracing |
 | `Source/effects.cpp` | `SFX_DBG` | SFX load tracing (per-file — verbose, slows loading) |
@@ -278,24 +358,30 @@ still being debugged actively. Remove them before any upstream PR.
 | Lua panic `attempt to index a nil value` | `LUA_USE_C89` missing for WIIU in `3rdParty/Lua/CMakeLists.txt` |
 | Menu does not react at all | Cemu input settings: map keyboard → Controller 1 (GamePad) |
 | Text input ✓ button does nothing | swkbd broken on Cemu; `keyboard.cpp` bypasses it |
-| Assets not found | Assets must be at the SD card root (`assets/`, `spawn.mpq`); `BasePath()` comes from SDL |
+| Assets not found | Either `/vol/content/assets/spawn.mpq` (WUHB layout) or `./assets/spawn.mpq` (SD layout) must exist; see [Path resolution](#path-resolution) |
+| Game writes saves/`diablo.ini` to the SD root | Running a WUHB that was packaged **without** `--content`, so the content mount is empty and the fallback layout is used |
+| WUHB boots to "MPQ file(s) might be damaged" | Packaged without `--content`, or the assets dir had no `spawn.mpq` |
+| `mkdir '/vol' failed (errno=5)` | Harmless — `/vol` is a virtual volume root; `EnsureDir()` ignores it |
 | Two log lines glued together | OSReport printf: don't use `%zu` / `%lu` |
 | Whole-file diff after editing | File is CRLF in git; don't let the editor rewrite endings |
 | Black screen, no errors | Missing `assets/ASSETS_VERSION` (fails the version check) |
 
 ## Next steps
 
-1. **Aroma-layout packaging** (current task): self-contained WUHB with assets in
-   `/content/`, no writes to the SD root, correct meta/icon — one artifact that
-   behaves identically on Cemu and on Aroma. Starts by logging the four paths.
-2. **Clean up** the throwaway `tweq` test blocks and trim the per-file `SFX_DBG`
-   spam.
-3. **Real hardware (Aroma) validation** — needs the user's Wii U; OSReport over
-   UDP/serial.
-4. **Network** (`NONET=OFF` + `nsysnet` init, mirroring
+1. **Real hardware (Aroma) validation** (current task) — needs the user's Wii U;
+   OSReport over UDP/serial.
+2. **Clean up**: the throwaway `tweq` test blocks in `Source/engine/sound.cpp`, the
+   per-file `SFX_DBG` spam, `Source/platform/wiiu/stub.cpp` (unused), the
+   CRLF-only churn in the top-level `CMakeLists.txt`, and the now-redundant
+   `-DLUA_USE_C89` in `CMake/platforms/wiiu.cmake`.
+3. **Network** (`NONET=OFF` + `nsysnet` init, mirroring
    `Source/platform/switch/network.cpp`).
-5. **Polish**: `DEVILUTIONX_GAMEPAD_TYPE Nintendo`, TV/DRC docking handling
+4. **Polish**: `DEVILUTIONX_GAMEPAD_TYPE Nintendo`, TV/DRC docking handling
    (Switch has `docking.cpp`), HOME/ProcUI integration.
+5. **Investigate `/vol/save`** — on real hardware it is the per-title save volume
+   and would be a better home for saves than the SD card. It does not exist on
+   Cemu (already probed and logged as `exists=no` by `wiiu_log_paths()`), so this
+   can only be settled on hardware.
 
 ## Session history
 
@@ -304,3 +390,4 @@ still being debugged actively. Remove them before any upstream PR.
 | Oct 2026 | Port bootstrap: platform init, display, assets from SD, Lua fix, keyboard fix. Game reached the main menu. |
 | Oct 2026 | Input "not working" traced to Cemu input settings, not code. Docs left stale. |
 | Nov 2026 | Audio enabled (`NOSOUND=OFF`). Hang during the first sfx traced to Cemu's broken `tweq`; workaround written and validated. Sound confirmed working in-game. Docs rewritten to match reality; build/run tooling moved into `tools/wiiu/`. |
+| Nov 2026 | Aroma-layout packaging. Found that SDL2 for Wii U has no filesystem backend (`SDL_GetBasePath()`/`SDL_GetPrefPath()` always `NULL`). `wiiu_init()` now resolves the paths: assets from the WUHB content mount (`/vol/content/assets`), writable data in `sd:/wiiu/apps/devilutionx/`. `package-wuhb.sh` produces a self-contained 41 MB WUHB; verified on Cemu with the SD card root emptied. |

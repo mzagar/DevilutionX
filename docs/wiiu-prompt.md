@@ -19,8 +19,10 @@ Nastavljamo rad na Wii U portu DevilutionX-a u `/Users/mario/work/wiiu/Devilutio
 2. `docs/wiiu-progress.md` — tehnički detalji, root causes, pitfalls
 
 **Kontekst u jednoj rečenici:** Diablo Shareware radi na Cemu 2.6.0 macOS
-(display, asseti, tipkovnica, text input, zvuk, gameplay, savegame). Port se
-razvija **samo na Cemu** — pravi Wii U (Aroma) testiramo tek kad je artefakt
+(display, asseti, tipkovnica, text input, zvuk, gameplay, savegame) iz
+self-contained WUHB-a u Aroma layoutu — asseti su unutar WUHB-a
+(`/vol/content/assets`), a zapisi idu u `sd:/wiiu/apps/devilutionx/`. Port se
+razvija **samo na Cemu** — pravi Wii U (Aroma) testiramo tek sad kad je artefakt
 ispravno zapakiran.
 
 **Dvije stvari koje će te ugristi ako ih zaboraviš:**
@@ -39,8 +41,7 @@ tools/wiiu/wiiu-run.sh 40 --no-build   # samo re-run
 grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 ```
 
-**Sljedeći zadatak:** Aroma-layout pakiranje — self-contained WUHB s assetima u
-`/content/`, bez pisanja u SD root, ispravan meta/icon. Koraci su u
+**Sljedeći zadatak:** validacija na pravom hardveru (Wii U + Aroma) — vidi
 `docs/wiiu-handoff.md` → "Next task".
 
 **Pravila rada:**
