@@ -1,5 +1,5 @@
 #!/bin/bash
-# Wii U: build -> tweq patch -> elf2rpl -> wuhbtool -> run in Cemu -> dump log.
+# Wii U: build -> tweq patch -> package (Aroma-layout WUHB) -> run in Cemu -> dump log.
 #
 # Usage: tools/wiiu/wiiu-run.sh [seconds_to_run] [--no-build]
 #
@@ -30,8 +30,13 @@ DEVKITPRO=${DEVKITPRO:-/opt/devkitpro}
 cd "$BUILD" || exit 1
 
 if [ "$DO_BUILD" = 1 ]; then
-  make -j4 2>&1 | grep -E "^\[.*(error|Error)|Linking CXX executable|Built target devilutionx$|SKIP_STRIP" | tail -5
-  [ -f devilutionx.elf ] || { echo "BUILD FAILED"; exit 1; }
+  make -j4 > /tmp/wiiu-make.log 2>&1 || {
+    echo "BUILD FAILED:"
+    grep -E "error:|Error [0-9]" /tmp/wiiu-make.log | head -15
+    exit 1
+  }
+  grep -E "Linking CXX executable|Built target devilutionx$" /tmp/wiiu-make.log | tail -2
+  [ -f devilutionx.elf ] || { echo "BUILD FAILED: no ELF"; exit 1; }
   # re-apply strip patch (lost on cmake re-run)
   grep -q 'SKIP_STRIP' CMakeFiles/devilutionx.dir/build.make || \
     sed -i '' 's|'"$DEVKITPRO"'/devkitPPC/bin/powerpc-eabi-strip|echo "SKIP_STRIP" #|' CMakeFiles/devilutionx.dir/build.make
@@ -39,12 +44,10 @@ fi
 
 python3 "$REPO/tools/wiiu/cemu-tweq-workaround.py" devilutionx.elf | tail -3
 
-"$DEVKITPRO/tools/bin/elf2rpl" devilutionx.elf devilutionx.rpx >/dev/null 2>&1 || { echo "elf2rpl FAILED"; exit 1; }
-"$DEVKITPRO/tools/bin/wuhbtool" "$BUILD/devilutionx.rpx" "$BUILD/devilutionx_sd.wuhb" \
-  --name "DevilutionX" --author "Devilution Team" >/dev/null 2>&1 || { echo "wuhbtool FAILED"; exit 1; }
-echo "packaged: $(ls -la devilutionx_sd.wuhb | awk '{print $5}') bytes"
+WUHB=$BUILD/devilutionx.wuhb
+WIIU_BUILD_DIR="$BUILD" "$REPO/tools/wiiu/package-wuhb.sh" "$WUHB" || { echo "PACKAGING FAILED"; exit 1; }
 
-"$CEMU" -g "$BUILD/devilutionx_sd.wuhb" -m "$MLC" > /tmp/cemu_run.log 2>&1 &
+"$CEMU" -g "$WUHB" -m "$MLC" > /tmp/cemu_run.log 2>&1 &
 sleep "$SECS"
 CPID=$(pgrep -f "Cemu.app/Contents/MacOS/Cemu" | head -1)
 if [ -n "$CPID" ]; then echo "cemu still running (pid $CPID) -> killed"; kill "$CPID" 2>/dev/null; sleep 2; kill -9 "$CPID" 2>/dev/null; else echo "cemu EXITED on its own (crash?)"; fi
