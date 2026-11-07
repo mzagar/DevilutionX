@@ -9,6 +9,7 @@
 
 #ifdef __WIIU__
 #include <coreinit/debug.h>
+#include "platform/wiiu/init.hpp"
 #define DBG(fmt, ...) OSReport("DiabloMain: " fmt "\n", ##__VA_ARGS__)
 #else
 #define DBG(fmt, ...) ((void)0)
@@ -2794,6 +2795,10 @@ int DiabloMain(int argc, char **argv)
 
 	DBG("ApplicationInit");
 	ApplicationInit();
+
+#ifdef __WIIU__
+	wiiu_log_paths();
+#endif
 
 	DBG("CheckArchivesUpToDate");
 	CheckArchivesUpToDate();
