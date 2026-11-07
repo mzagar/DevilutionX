@@ -18,12 +18,12 @@ Nastavljamo rad na Wii U portu DevilutionX-a u `/Users/mario/work/wiiu/Devilutio
 1. `docs/wiiu-handoff.md` — gdje smo, što je sljedeće, kako se builda i pokreće
 2. `docs/wiiu-progress.md` — tehnički detalji, root causes, pitfalls
 
-**Kontekst u jednoj rečenici:** Diablo Shareware radi na Cemu 2.6.0 macOS
-(display, asseti, tipkovnica, text input, zvuk, gameplay, savegame) iz
-self-contained WUHB-a u Aroma layoutu — asseti su unutar WUHB-a
-(`/vol/content/assets`), a zapisi idu u `sd:/wiiu/apps/devilutionx/`. Port se
-razvija **samo na Cemu** — pravi Wii U (Aroma) testiramo tek sad kad je artefakt
-ispravno zapakiran.
+**Kontekst u jednoj rečenici:** Diablo Shareware radi i na **pravom Wii U-u pod
+Aromom** i na Cemu 2.6.0 macOS (display, asseti, tipkovnica, text input, zvuk,
+gameplay, savegame) iz **istog** self-contained WUHB-a u Aroma layoutu — asseti
+su unutar WUHB-a (`/vol/content/assets`), a zapisi idu u
+`sd:/wiiu/apps/devilutionx/`. Pravi hardver je validiran 7. 11. 2026.; razvoj
+dalje ide **Cemu-first** jer je brži, a Wii U služi za potvrdu milestona.
 
 **Dvije stvari koje će te ugristi ako ih zaboraviš:**
 1. **Cemu `tweq` bug** — Cemu trapira `tweq` i kad uvjet nije ispunjen, a GCC to
@@ -41,11 +41,12 @@ tools/wiiu/wiiu-run.sh 40 --no-build   # samo re-run
 grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 ```
 
-**Sljedeći zadatak:** validacija na pravom hardveru (Wii U + Aroma). Kopiraj
-`build-wiiu-release/devilutionx.wuhb` u `sd:/wiiu/apps/devilutionx/` i nakon
-boota pročitaj `sd:/wiiu/apps/devilutionx/boot-diag.txt` — tu piše je li content
-mount bio dostupan i koje su putanje odabrane (OSReport na hardveru ne vidimo
-bez dodatne opreme). Detalji: `docs/wiiu-handoff.md` → "Next task".
+**Sljedeći zadatak:** čišćenje branche (vidi `docs/wiiu-handoff.md` → "Next
+task"): throwaway test blokovi u `Source/engine/sound.cpp`, per-file `SFX_DBG`
+spam u `Source/effects.cpp`, `Source/platform/wiiu/stub.cpp`, CRLF churn u
+top-level `CMakeLists.txt`, redundantni `-DLUA_USE_C89` u
+`CMake/platforms/wiiu.cmake`. Nakon toga: mreža (`NONET=OFF` + `nsysnet`), pa
+polish (`DEVILUTIONX_GAMEPAD_TYPE Nintendo`, TV/DRC docking, HOME/ProcUI).
 
 **Pravila rada:**
 - Debug output (OSReport `DBG`/`SND_DBG`/`SMPL_DBG`/`SFX_DBG`) **ostaje u treeu**

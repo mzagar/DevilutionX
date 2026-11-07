@@ -6,13 +6,14 @@
 
 ## Where we are
 
-Diablo (Shareware) **runs and is playable on Cemu 2.6.0 on macOS, from a
-self-contained Aroma-layout WUHB** — display, assets, keyboard/mouse, text input,
-audio (SFX + music), gameplay and savegames all work, and nothing is written to
-the SD card root.
+Diablo (Shareware) **runs and is playable on a real Wii U under Aroma, and on
+Cemu 2.6.0 on macOS, from the same self-contained Aroma-layout WUHB** — display,
+assets, keyboard/mouse, text input, audio (SFX + music), gameplay and savegames
+all work, and nothing is written to the SD card root.
 
-The port is developed **on Cemu only**; real hardware (Aroma) testing is
-deliberately deferred until the artifact is packaged properly — which it now is.
+**Real hardware was validated on 7 Nov 2026** (see below). Development stays
+Cemu-first because that loop is much faster; the Wii U is for confirming
+milestones.
 
 ## ⚡ Quick start
 
@@ -38,6 +39,8 @@ grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 - **Aroma-layout packaging** — assets inside the WUHB (`/vol/content/assets`),
   writable data in `sd:/wiiu/apps/devilutionx/`, nothing in the SD card root.
   `tools/wiiu/package-wuhb.sh` builds a self-contained ~41 MB WUHB.
+- **Real hardware (Aroma)** — the same WUHB boots on a Wii U, mounts its content
+  at `/vol/content`, resolves identical paths, and plays with audio + saves
 - Build/package pipeline + the Cemu `tweq` workaround, both scripted in `tools/wiiu/`
 
 ## ⚠️ Two things that will bite you
@@ -53,39 +56,43 @@ grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 2. **`elf2rpl` needs an unstripped ELF.** The strip patch is lost on every
    `cmake` re-run; `wiiu-run.sh` re-applies it.
 
-## 🎯 Next task: real-hardware validation
+## ✅ Real hardware (Aroma) — validated 7 Nov 2026
 
-**Goal:** run the packaged WUHB on a real Wii U with Aroma and confirm it behaves
-the same as on Cemu.
+The packaged WUHB was copied to `sd:/wiiu/apps/devilutionx/` and booted on a real
+Wii U under Aroma. **Everything works**: main menu, input, audio, gameplay, save
+and load. The WUHB content is mounted at `/vol/content` exactly as on Cemu, and
+all four resolved paths are identical.
 
-1. Copy `build-wiiu-release/devilutionx.wuhb` to `sd:/wiiu/apps/devilutionx/` on
-   the Wii U. **Nothing else is needed** — the assets are inside the WUHB.
-2. Launch it from the Wii U Menu (Aroma) and check: main menu, input, audio,
-   starting a game, saving, and that `sd:/wiiu/apps/devilutionx/` receives
-   `diablo.ini` + save files.
-3. **Read `sd:/wiiu/apps/devilutionx/boot-diag.txt`.** It is written on every
-   boot, so no OSReport capture (UDP/serial) is needed to see what happened.
+From `boot-diag.txt` on the hardware boot:
 
-Things to watch for:
+```
+content mount                '/vol/content' -> YES
+content/assets/spawn.mpq     '/vol/content/assets/spawn.mpq' -> YES
+save volume                  '/vol/save' -> YES
+BasePath   = '/vol/content/assets/'
+AssetsPath = '/vol/content/assets/'
+PrefPath   = '/vol/external01/wiiu/apps/devilutionx/'
+ConfigPath = '/vol/external01/wiiu/apps/devilutionx/'
+```
 
-- If the game does not start, **`boot-diag.txt` is the first thing to look at**.
-  If it says `content mount '/vol/content' -> no`, then Aroma did not mount the
-  WUHB content and the mount point in `wiiu_init()` needs fixing. If it says
-  `pref/config: SD data dir unusable`, the SD card is not writable.
-- The `tweq` workaround is **not needed** on real hardware (it is a Cemu bug),
-  but the patched binary is safe to run there anyway: the NOPped guard is an
-  unreachable 2³¹-overflow check.
-- `/vol/save` is the per-title save volume on real hardware and would be a
-  better home for saves than the SD card. `boot-diag.txt` already records
-  `exists=`/`writable=` for it — check it before changing anything.
+The only two differences from Cemu, both cosmetic:
 
-### Boot diagnostics
+| | Cemu | Real Wii U |
+|---|---|---|
+| `/vol/save` | does not exist | exists + writable (Aroma redirects it to `sd:/wiiu/apps/save/B12DEFFB (DevilutionX)/`; **unused** — we write to the SD card) |
+| `listdir '/vol'` | works | FAILED — harmless, diagnostic listing only |
+
+So one artifact serves both, and the Cemu-first workflow stays trustworthy. Full
+evidence: [`wiiu-progress.md`](wiiu-progress.md#9-real-hardware-aroma-verified-on-7-nov-2026).
+
+## Boot diagnostics
 
 `wiiu_init()` writes everything it reports to `boot-diag.txt` on the SD card
 (`sd:/wiiu/apps/devilutionx/boot-diag.txt`, falling back to `sd:/boot-diag.txt`
 if the data directory cannot be created). OSReport is invisible on real hardware
 without extra tooling, so this file is the only way to debug a failed boot there.
-It contains:
+It contains (example from a Cemu boot — see above for how the hardware values
+differ):
 
 ```
 === DevilutionX Wii U boot diagnostics ===
@@ -113,6 +120,29 @@ pref/config: using '/vol/external01/wiiu/apps/devilutionx'
 The resolved-paths section appears twice: once during `wiiu_init()` and once
 re-checked after `ApplicationInit()`. The file is **overwritten on every boot**,
 so read it before relaunching.
+
+## 🎯 Next task: cleanup
+
+**Goal:** make the branch presentable — before touching network or polish.
+
+Nothing here changes behaviour; it is almost entirely removal.
+
+1. `Source/engine/sound.cpp` — delete the two throwaway test blocks (an
+   `std::atomic` test and a `__builtin_trap` test) left over from the `tweq`
+   investigation. Keep the `SND_DBG` tracing.
+2. `Source/effects.cpp` — trim the per-file `SFX_DBG` spam; it slows sound
+   loading and floods the log.
+3. `Source/platform/wiiu/stub.cpp` — delete it and its entry in
+   `Source/platform/wiiu/CMakeLists.txt`.
+4. Top-level `CMakeLists.txt` — revert the CRLF-only churn; the real change is
+   just the `if(WIIU)` block.
+5. `CMake/platforms/wiiu.cmake` — drop the redundant `-DLUA_USE_C89` (the fix
+   lives in `3rdParty/Lua/CMakeLists.txt`) and the stale "Cemu signal-10 crash"
+   comment block.
+
+After that: **network** (`NONET=OFF` + `nsysnet`, mirroring
+`Source/platform/switch/network.cpp`), then **polish**
+(`DEVILUTIONX_GAMEPAD_TYPE Nintendo`, TV/DRC docking, HOME/ProcUI).
 
 ## ℹ️ How the packaging works
 
@@ -161,6 +191,7 @@ sd:/wiiu/apps/devilutionx/   writable, created on first run
 | Build dir | `build-wiiu-release` |
 | Assets source | `build-wiiu-clean/assets/` (packaged into the WUHB) |
 | Data on SD | `sd:/wiiu/apps/devilutionx/` (`diablo.ini`, `save_*.sv`, `boot-diag.txt`) |
+| Real SD card (tested) | `sd:/wiiu/apps/devilutionx/devilutionx.wuhb` — same layout as Cemu, nothing else needed |
 
 ## Notes for whoever continues
 
