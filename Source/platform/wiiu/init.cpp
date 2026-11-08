@@ -29,7 +29,9 @@
  * is the only way to find out what happened when a boot fails there.
  */
 #include "platform/wiiu/init.hpp"
+#include "platform/wiiu/network.hpp"
 
+#include <cerrno>
 #include <cstdarg>
 #include <cstdio>
 #include <string>
@@ -42,6 +44,13 @@
 
 #ifdef __WIIU__
 #include <coreinit/debug.h>
+
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <netinet/in.h>
+#include <nsysnet/_socket.h>
+#include <sys/socket.h>
+#include <sys/select.h>
 #endif
 
 #include "utils/paths.h"
@@ -269,6 +278,169 @@ void SetupPaths()
 	}
 }
 
+// ---------------------------------------------------------------------------
+// M0 network probe
+//
+// TEMPORARY scaffolding: proves out what wut/Cemu actually support before the
+// TCP provider is wired in. Delete once network multiplayer works.
+// ---------------------------------------------------------------------------
+
+void ProbeStep(const char *what, int rc)
+{
+	Diag("  %-32s rc=%-4d errno=%d", what, rc, errno);
+}
+
+void ProbeNetworking()
+{
+	Diag("=== network probe ===");
+	Diag("  FD_SETSIZE=%d NSYSNET_FD_SETSIZE=%d", FD_SETSIZE, NSYSNET_FD_SETSIZE);
+
+	socket_lib_init();
+	Diag("  socket_lib_init() returned (direct)");
+
+	// --- Phase 1: DNS. If this fails, Cemu is not bridging to the host at all ---
+	addrinfo hints {};
+	hints.ai_family = AF_INET;
+	hints.ai_socktype = SOCK_STREAM;
+	addrinfo *resolved = nullptr;
+	int rc = getaddrinfo("example.com", "80", &hints, &resolved);
+	Diag("  %-32s rc=%d errno=%d", "getaddrinfo(example.com)", rc, errno);
+	if (resolved != nullptr) {
+		char ip[32] = {};
+		inet_ntop(AF_INET, &reinterpret_cast<sockaddr_in *>(resolved->ai_addr)->sin_addr, ip, sizeof(ip));
+		Diag("  example.com -> %s", ip);
+	}
+	DiagFlushToSd();
+
+	// --- Phase 2: outbound TCP. select() for writable proves a real handshake ---
+	if (resolved != nullptr) {
+		rc = socket(AF_INET, SOCK_STREAM, 0);
+		ProbeStep("socket(outbound)", rc);
+		const int out = rc;
+		if (out >= 0) {
+			rc = connect(out, resolved->ai_addr, resolved->ai_addrlen);
+			ProbeStep("connect(example.com:80)", rc);
+
+			fd_set wr;
+			FD_ZERO(&wr);
+			FD_SET(out, &wr);
+			timeval timeout { 5, 0 };
+			rc = select(out + 1, nullptr, &wr, nullptr, &timeout);
+			ProbeStep("select(writable, 5s)", rc);
+
+			if (rc > 0) {
+				const char req[] = "GET / HTTP/1.0\r\nHost: example.com\r\n\r\n";
+				rc = static_cast<int>(send(out, req, sizeof(req) - 1, 0));
+				ProbeStep("send(HTTP request)", rc);
+
+				fd_set rd;
+				FD_ZERO(&rd);
+				FD_SET(out, &rd);
+				timeval readTimeout { 5, 0 };
+				rc = select(out + 1, &rd, nullptr, nullptr, &readTimeout);
+				ProbeStep("select(readable, 5s)", rc);
+
+				if (rc > 0) {
+					Diag("  --- recv on the REAL socket ---");
+					DiagFlushToSd();
+					char buf[128] = {};
+					rc = static_cast<int>(recv(out, buf, sizeof(buf) - 1, 0));
+					ProbeStep("recv(example.com)", rc);
+					if (rc > 0) {
+						buf[rc] = '\0';
+						for (char *p = buf; *p != '\0'; ++p) {
+							if (*p == '\n' || *p == '\r')
+								*p = ' ';
+						}
+						Diag("  payload = '%s'", buf);
+					}
+				}
+			}
+			close(out);
+		}
+	}
+	if (resolved != nullptr)
+		freeaddrinfo(resolved);
+
+	Diag("=== network probe: outbound part done ===");
+	DiagFlushToSd();
+
+	// --- Phase 3: listening socket (we want the Wii U to be able to host) ---
+	rc = socket(AF_INET, SOCK_STREAM, 0);
+	ProbeStep("socket(listener)", rc);
+	const int srv = rc;
+	if (srv < 0) {
+		DiagFlushToSd();
+		return;
+	}
+
+	const int one = 1;
+	rc = setsockopt(srv, SOL_SOCKET, SO_REUSEADDR, &one, sizeof(one));
+	ProbeStep("setsockopt(SO_REUSEADDR)", rc);
+
+	sockaddr_in addr {};
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = htonl(INADDR_ANY);
+	addr.sin_port = htons(6112);
+	rc = bind(srv, reinterpret_cast<sockaddr *>(&addr), sizeof(addr));
+	ProbeStep("bind(0.0.0.0:6112)", rc);
+	rc = listen(srv, 4);
+	ProbeStep("listen(backlog=4)", rc);
+
+	socklen_t addrLen = sizeof(addr);
+	rc = getsockname(srv, reinterpret_cast<sockaddr *>(&addr), &addrLen);
+	ProbeStep("getsockname", rc);
+	Diag("  bound port = %d", ntohs(addr.sin_port));
+
+	rc = socket(AF_INET, SOCK_STREAM, 0);
+	ProbeStep("socket(client)", rc);
+	const int cli = rc;
+	if (cli < 0) {
+		close(srv);
+		DiagFlushToSd();
+		return;
+	}
+
+	sockaddr_in dst {};
+	dst.sin_family = AF_INET;
+	dst.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+	dst.sin_port = addr.sin_port;
+	rc = connect(cli, reinterpret_cast<sockaddr *>(&dst), sizeof(dst));
+	ProbeStep("connect(127.0.0.1)", rc);
+
+	Diag("=== network probe: before accept ===");
+	DiagFlushToSd();
+
+	sockaddr_in peer {};
+	socklen_t peerLen = sizeof(peer);
+	rc = accept(srv, reinterpret_cast<sockaddr *>(&peer), &peerLen);
+	ProbeStep("accept", rc);
+	const int acc = rc;
+	if (acc >= 0) {
+		rc = static_cast<int>(send(cli, "ping", 4, 0));
+		ProbeStep("send(\"ping\")", rc);
+
+		Diag("  --- select(2s) ---");
+		fd_set readSet;
+		FD_ZERO(&readSet);
+		FD_SET(acc, &readSet);
+		timeval loopbackTimeout { 2, 0 };
+		rc = select(acc + 1, &readSet, nullptr, nullptr, &loopbackTimeout);
+		ProbeStep("select(acc+1, 2s)", rc);
+		if (rc > 0)
+			Diag("  FD_ISSET(acc) = %d", FD_ISSET(acc, &readSet) ? 1 : 0);
+
+		// Cemu's internal loopback never delivers data (select always times out),
+		// so recv() is probed on the real socket above instead.
+		close(acc);
+	}
+	close(cli);
+	close(srv);
+
+	Diag("=== network probe done ===");
+	DiagFlushToSd();
+}
+
 } // namespace
 
 void wiiu_init()
@@ -277,6 +449,16 @@ void wiiu_init()
 	LogEnvironment();
 	SetupPaths();
 	wiiu_log_paths();
+#ifdef __WIIU__
+#ifndef NONET
+	wiiu_enable_network();
+	Diag("network: wiiu_enable_network() done");
+#endif
+	ProbeNetworking();
+#ifndef NONET
+	wiiu_probe_asio();
+#endif
+#endif
 }
 
 void wiiu_log_paths()
