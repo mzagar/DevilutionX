@@ -473,6 +473,54 @@ The same applies to `Hellfire Intro`, and there is a third way to see the
 cinematic: leaving the main menu idle for 30 seconds triggers attract mode,
 which plays it again (`Source/DiabloUI/mainmenu.cpp:120`).
 
+### 14. `nsysnet` works under Cemu, and asio needs four shims on Wii U
+
+**The Wii U socket layer is real and Cemu bridges it to the host network.** A raw
+probe from `wiiu_init()` got `HTTP/1.1 200 OK` back from `example.com`, and once
+asio was wired up the same round-trip went through it:
+
+```
+WIIUNET:   resolved example.com            <- asio resolver
+WIIUNET:   asio::connect ok                <- asio TCP connect
+WIIUNET:   write ok
+WIIUNET:   read 891 byte(s) -> asio works
+```
+
+**This matters strategically**: the Cemu-first loop covers networking too, so the
+Wii U is still only needed to confirm milestones.
+
+What the port needed (all in `Source/platform/wiiu/asio/`, plus
+`CMake/platforms/wiiu/asio_defs.cmake`):
+
+| Problem | Fix |
+|---|---|
+| `pthread_key_create` **always** returns `ENOSYS` (the newlib stub is `li r3,88`) → asio's `posix_tss_ptr` throws during **static initialisation**, before any UI exists, and `ErrDlg` crashes there too → **completely silent crash** (only clue: `__do_global_ctors_aux` in a stack dump) | `ASIO_DISABLE_THREADS=ON` (what 3DS does) |
+| no `pipe()` → `pipe_select_interrupter` throws | real `pipe()` built on a TCP loopback pair (`bind 127.0.0.1:0` → `listen` → `connect` → `accept`). Cemu's internal loopback never signals, so in Cemu the reactor simply never gets interrupted early |
+| no `<termios.h>` | `ASIO_DISABLE_SERIAL_PORT=ON` |
+| `asio::detail::throw_exception` undefined (`ASIO_NO_EXCEPTIONS` is set PUBLIC by `3rdParty/asio/CMakeLists.txt:11`) | it lives in `3rdParty/asio/asio_handle_exception.hpp`; **any new file using asio must include it** |
+
+Also: the umbrella `<asio.hpp>` **cannot** be included — it pulls in `asio::local`
+(Unix sockets), which conflicts with wut's flexible-array `struct sockaddr`. Use
+specific headers (`asio/ip/tcp.hpp`, `asio/connect.hpp`, `asio/read.hpp`, …).
+
+Two Cemu-only quirks worth knowing: `accept(srv, nullptr, nullptr)` **crashes**
+(pass a real `sockaddr_in` + `socklen_t`), and Cemu's *internal* loopback never
+delivers data — a loopback-pair probe looks broken even though real traffic works.
+`wut` ships no `libnsysnet.a`; it resolves through `wut.ld`'s `.fimport_nsysnet`.
+
+Diagnostic worth keeping: `fatal_exception()` now OSReports `ASIOFATAL: <msg>` on
+`__WIIU__` **before** calling `ErrDlg`, because `ErrDlg` itself crashes before the
+UI exists and would otherwise hide the real error.
+
+### 15. ⬜ OPEN — text input does not work in the multiplayer dialogs
+
+**Not yet diagnosed.** In *Create Game* the password field accepts no keystrokes
+and *OK* does not advance; the same happens with the address field in
+*Client-Server (TCP)*. `keyboard.cpp` bypasses the system swkbd for the
+single-player character name, so either these dialogs do not route through it, or
+they need `SDL_TEXTINPUT` plumbed through properly. **This blocks all multiplayer
+testing.**
+
 ## Build pipeline
 
 ```bash
@@ -767,18 +815,22 @@ CWD-relative fallback paths, while still writing the file.
      lives in `3rdParty/Lua/CMakeLists.txt`)
    - the temporary `gbIsSpawn=… HaveIntro=… HaveHellfire=…` `DBG` line in
      `Source/diablo.cpp` (added for [finding 10](#10-full-game--hellfire-data))
-2. **Next feature — undecided, to be brainstormed.** Candidates on the table:
-   - **Local multiplayer on one Wii U.** Three shapes were proposed: (a)
-     split-screen, 2–4 players, each with their own controller (Mario Kart
-     style); (b) 2–4 players sharing a single screen, so nobody can wander off
-     alone; (c) a hybrid — one shared screen while the party is together, which
-     splits when a player walks away, the others carrying on in the shared view.
-   - **Network multiplayer** (`NONET=OFF` + `nsysnet` init, mirroring
-     `Source/platform/switch/network.cpp`). Note the test SD card already has the
-     `Inkay-pretendo` module and plugin installed, which may matter for testing.
-   - **Polish**: `DEVILUTIONX_GAMEPAD_TYPE Nintendo`, TV/DRC docking handling
-     (Switch has `docking.cpp`), HOME/ProcUI integration.
-3. **Decide on `/vol/save`** for `PrefPath()`/`ConfigPath()`. It is the "proper"
+2. **Finish network multiplayer (feature parity).** Chosen over local co-op
+   because the goal is to make the Wii U do what the other platforms already do
+   first. M0–M3 are done ([finding 14](#14-nsysnet-works-under-cemu-and-asio-needs-four-shims-on-wii-u));
+   the open work is:
+   - **fix text input** in the multiplayer dialogs — the immediate blocker
+     ([finding 15](#15--open--text-input-does-not-work-in-the-multiplayer-dialogs))
+   - **test it without the user**: two Cemu instances (different SD/MLC dirs) over
+     `127.0.0.1:6112`, or a native macOS DevilutionX build as the second peer
+   - **ZeroTier** — feasibility check (`zerotier_lwip` vs `zerotier_native` on
+     devkitPPC) before promising it; `DISABLE_ZERO_TIER ON` hides it today
+   - **M5** address-entry UX for a controller-only device
+   - Proposals: [`wiiu-network-multiplayer.md`](wiiu-network-multiplayer.md),
+     [`wiiu-local-multiplayer.md`](wiiu-local-multiplayer.md) (local co-op, afterwards)
+3. **Polish** (after parity): `DEVILUTIONX_GAMEPAD_TYPE Nintendo`, TV/DRC docking
+   handling (Switch has `docking.cpp`), HOME/ProcUI integration.
+4. **Decide on `/vol/save`** for `PrefPath()`/`ConfigPath()`. It is the "proper"
    per-title save volume and works on hardware, but it does **not** exist on
    Cemu, so using it would need the current SD path kept as a fallback. The SD
    path works, is easy to inspect from a card reader, and survives a

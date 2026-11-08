@@ -53,17 +53,33 @@ tools/wiiu/wiiu-run.sh 40 --no-build   # samo re-run
 grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 ```
 
-**Sljedeći zadatak:** **još nije odlučen** — treba brainstormati koji feature
-napasti. Kandidati: **lokalni multiplayer na jednom Wii U-u** (2–4 igrača,
-split-screen / zajednički ekran / hibrid), **mrežna igra** (`NONET=OFF` +
-`nsysnet`), ili polish (`DEVILUTIONX_GAMEPAD_TYPE Nintendo`, TV/DRC docking,
-HOME/ProcUI). Detalji u `docs/wiiu-handoff.md` → "Next task".
+**Sljedeći zadatak: dovršiti mrežni multiplayer (feature parity).** Cilj je da
+Wii U radi ono što ostale platforme već rade; lokalni split-screen co-op dolazi
+poslije (proposal: `docs/wiiu-local-multiplayer.md`).
 
-Nakon što se odluči, prvo ide **čišćenje branche** (throwaway `tweq` test blokovi
-u `Source/engine/sound.cpp`, per-file `SFX_DBG` spam u `Source/effects.cpp`,
+Stanje: **M0–M3 gotovi** (`NONET=OFF`, `nsysnet` + asio + libsodium rade; asio je
+pod Cemuom napravio pravi HTTP round-trip, dakle Cemu bridža `nsysnet` na mrežu
+hosta). **M4 blokira bug u text inputu**: u *Create Game* polje za password ne
+prima tipke, isto kao ni polje za adresu u *Client-Server (TCP)*.
+
+Red rada:
+1. **Popraviti text input** u multiplayer dijalozima (`keyboard.cpp` zaobilazi
+   swkbd za ime lika — treba provjeriti `SDL_TEXTINPUT` za ostala polja)
+2. **Testirati bez usera**: 2 Cemu instance (različiti SD/MLC) preko
+   `127.0.0.1:6112`, ili native macOS DevilutionX build kao drugi peer
+3. **ZeroTier** — provjeriti izvedivost (`zerotier_lwip` vs `zerotier_native` na
+   devkitPPC) prije nego se obeća; `DISABLE_ZERO_TIER ON` ga trenutno skriva
+4. M5: UX za upis adrese (konzola bez tipkovnice)
+
+Za UI automatizaciju (klikanje/tipkanje iz skripte) treba **Accessibility
+dozvola** za terminal u kojem se vrti pi; dozvola je već dana, ali **iTerm se
+mora restartati** da je preuzme. Detalji u `docs/wiiu-handoff.md` → "Next task".
+
+**Čišćenje branche dolazi poslije featura** (throwaway `tweq` test blokovi u
+`Source/engine/sound.cpp`, per-file `SFX_DBG` spam u `Source/effects.cpp`,
 `Source/platform/wiiu/stub.cpp`, CRLF churn u top-level `CMakeLists.txt`,
-redundantni `-DLUA_USE_C89` u `CMake/platforms/wiiu.cmake`) — **ali ne prije**,
-jer debug output nam treba za razvoj featura.
+redundantni `-DLUA_USE_C89` u `CMake/platforms/wiiu.cmake`) — **ne prije**, jer
+debug output nam treba za razvoj.
 
 **Pravila rada:**
 - Debug output (OSReport `DBG`/`SND_DBG`/`SMPL_DBG`/`SFX_DBG`) **ostaje u treeu**

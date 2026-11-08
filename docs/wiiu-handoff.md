@@ -22,6 +22,12 @@ stays Cemu-first because that loop is much faster; the Wii U is for confirming
 milestones. Everything on the Wii U so far has matched Cemu exactly, so the
 Cemu loop is trustworthy.
 
+**Network multiplayer parity is in progress.** The Wii U socket layer
+(`nsysnet`), asio and libsodium all work: the build now has `NONET=OFF`, and an
+asio TCP client completed a real HTTP round-trip under Cemu. The remaining
+blocker is text input in the multiplayer dialogs — see
+[Next task](#-next-task-finish-network-multiplayer-parity).
+
 ## ⚡ Quick start
 
 ```bash
@@ -53,10 +59,13 @@ grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 - **Hellfire** — the expansion is a Lua **mod**; it is packed into `hf.mpq` and
   shipped *inside* the WUHB, so no `mods/` directory is needed on the SD card.
   Hellfire gets its own `.hsv` save namespace
+- **Network stack (asio + nsysnet + libsodium)** — `NONET=OFF`; asio TCP
+  `resolve`/`connect`/`write`/`read` verified end-to-end under Cemu, which
+  bridges `nsysnet` to the host network
 - Build/package pipeline (including the mod packing) + the Cemu `tweq` workaround,
   all scripted in `tools/wiiu/`
 
-## ⚠️ Three things that will bite you
+## ⚠️ Four things that will bite you
 
 1. **The Cemu `tweq` bug.** Cemu 2.6.0 takes `tweq` traps even when the
    condition is false, and GCC emits `tweq` for libstdc++'s shared_ptr
@@ -69,7 +78,16 @@ grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 2. **`elf2rpl` needs an unstripped ELF.** The strip patch is lost on every
    `cmake` re-run; `wiiu-run.sh` re-applies it.
 
-3. **Hellfire is a Lua *mod*, and its loader is silent.** `gbIsHellfire` is set
+3. **`pthread_key_create` always fails on Wii U (`ENOSYS`).** asio's
+   `posix_tss_ptr` throws during *static initialisation*, before any UI exists —
+   and `ErrDlg` crashes there too, so the failure is completely silent (the only
+   clue is `__do_global_ctors_aux` in a stack dump). Fixed with
+   `ASIO_DISABLE_THREADS=ON`, same as 3DS. Other asio landmines on this port: no
+   `pipe()` (shimmed over a TCP loopback pair), no `<termios.h>`
+   (`ASIO_DISABLE_SERIAL_PORT`), and the umbrella `<asio.hpp>` **cannot** be used
+   (its `asio::local` conflicts with wut's `sockaddr`) — include specific headers.
+
+4. **Hellfire is a Lua *mod*, and its loader is silent.** `gbIsHellfire` is set
    only by `mods/hf/init.lua`, and `RunScript(..., optional=true)` reports nothing
    when a mod is missing. The symptom is deceptive: the MPQs are present,
    `HaveHellfire=1`, the *Enter Hellfire* dialog appears — and the class list
@@ -257,22 +275,67 @@ The resolved-paths section appears twice: once during `wiiu_init()` and once
 re-checked after `ApplicationInit()`. The file is **overwritten on every boot**,
 so read it before relaunching.
 
-## 🎯 Next task: undecided — brainstorm, then this cleanup
+## 🎯 Next task: finish network multiplayer parity
 
-The branch has reached a good baseline: everything works on both Cemu and real
-hardware, and the artifact is self-contained. **The next feature is still to be
-chosen.** Candidates on the table:
+**The goal is parity: the Wii U should do what every other platform already does**,
+before anything new is invented. Local split-screen co-op stays on the list for
+afterwards (a proposal exists in
+[`wiiu-local-multiplayer.md`](wiiu-local-multiplayer.md)).
 
-- **Local multiplayer on one Wii U** — 2–4 players with their own controllers.
-  Three shapes were proposed: (a) split-screen, Mario Kart style; (b) everyone on
-  one shared screen, so nobody can wander off alone; (c) a hybrid that stays
-  shared while the party is together and splits when a player walks away.
-- **Network multiplayer** — `NONET=OFF` + `nsysnet`, mirroring
-  `Source/platform/switch/network.cpp`.
-- **Polish** — `DEVILUTIONX_GAMEPAD_TYPE Nintendo`, TV/DRC docking, HOME/ProcUI.
+### Where it stands
 
-Whenever that is settled, this cleanup comes first (it makes the feature diff
-easier to read, and the debug output it removes is not needed for the feature):
+| Milestone | State |
+|---|---|
+| **M0** feasibility probe | ✅ **Cemu's `nsysnet` is real** — it bridges to the host network (a real HTTP GET through asio returned `HTTP/1.1 200 OK`) |
+| **M1** socket init | ✅ `wiiu_enable_network()` called from `wiiu_init()` |
+| **M2** asio shims | ✅ 13 files under `Source/platform/wiiu/asio/` (copied from Switch/3DS) |
+| **M3** encryption (`libsodium`) | ✅ bundled, builds |
+| **M4** a real dvlnet session | ⬜ **blocked by the text-input bug** |
+| **M5** address-entry UX | ⬜ not started |
+
+### Blockers and open questions
+
+1. **Text input in text fields does not work — this is the immediate blocker.**
+   In *Create Game* the password field takes no keystrokes and *OK* does not
+   advance; same for the address field in *Client-Server (TCP)*. `keyboard.cpp`
+   bypasses the system swkbd for the single-player character name, so the
+   multiplayer dialogs either do not route through it or need `SDL_TEXTINPUT`
+   plumbed. **Nothing multiplayer can be tested until this works.**
+2. **ZeroTier is missing from the connection list.** `set(DISABLE_ZERO_TIER ON)`
+   in `CMake/platforms/wiiu.cmake` is what hides it. The user wants it (internet
+   play without a shared LAN), so it needs a feasibility check —
+   `zerotier_lwip` vs `zerotier_native` on devkitPPC — **before promising it**.
+3. **A second peer is needed for testing** — see below.
+
+### Testing this without the user
+
+The Cemu-first loop can cover multiplayer too, given a second peer and the
+ability to drive the UI.
+
+```bash
+# Preferred: two Cemu instances with different SD/MLC dirs — one hosts, one joins.
+# Fallback: a native macOS DevilutionX build joins the Cemu instance.
+```
+
+Cemu bridges `nsysnet` to the host network, so `127.0.0.1:6112` works between
+two Cemu instances, and between Cemu and a native build.
+
+Driving the menus needs keystroke injection, which needs the terminal running pi
+to be enabled under **System Settings → Privacy & Security → Accessibility**
+(it is enabled on this machine; a **running iTerm must be restarted** to pick it
+up):
+
+```bash
+osascript -e 'tell application "System Events" to key code 36'   # Return
+```
+
+### Afterwards
+
+4. **Polish** — `DEVILUTIONX_GAMEPAD_TYPE Nintendo`, TV/DRC docking, HOME/ProcUI.
+5. **Then the cleanup below**, which is deliberately deferred: the debug output
+   is the main tool for building the feature.
+
+### Deferred cleanup
 
 Nothing here changes behaviour; it is almost entirely removal.
 
