@@ -20,15 +20,16 @@ Nastavljamo rad na Wii U portu DevilutionX-a u `/Users/mario/work/wiiu/Devilutio
 
 **Kontekst u jednoj rečenici:** Diablo radi i na **pravom Wii U-u pod Aromom** i
 na Cemu 2.6.0 macOS (display, asseti, tipkovnica, text input, zvuk, gameplay,
-savegame) iz **istog** self-contained WUHB-a u Aroma layoutu — asseti su unutar
-WUHB-a (`/vol/content/assets`), a zapisi idu u `sd:/wiiu/apps/devilutionx/`.
-Radii i **shareware i puna igra (Diablo + Hellfire)**: retail MPQ-ovi
-(`DIABDAT.MPQ` + `hellfire.mpq`/`hf*.mpq`) se samo stave u isti direktorij
-(`tools/wiiu/extract-gog-mpqs.sh` ih izvadi iz GOG installera). Pravi hardver je
-validiran 7. 11. 2026.; razvoj dalje ide **Cemu-first** jer je brži, a Wii U
-služi za potvrdu milestona.
+savegame) iz **istog** self-contained WUHB-a u Aroma layoutu. Artefakt je
+**potpuno samostalan**: engine, shareware fallback i **Hellfire mod**
+(`assets/mods/hf.mpq`) su unutar WUHB-a; na SD kartici su samo retail MPQ-ovi
+(`DIABDAT.MPQ` + `hellfire.mpq`/`hf*.mpq`, `tools/wiiu/extract-gog-mpqs.sh` ih
+izvadi iz GOG installera) i ono što igra sama piše u
+`sd:/wiiu/apps/devilutionx/`. Pravi hardver je validiran 7. i 8. 11. 2026. i
+**sve se dosad ponašalo identično kao na Cemu**; razvoj dalje ide **Cemu-first**
+jer je brži, a Wii U služi za potvrdu milestona.
 
-**Dvije stvari koje će te ugristi ako ih zaboraviš:**
+**Tri stvari koje će te ugristi ako ih zaboraviš:**
 1. **Cemu `tweq` bug** — Cemu trapira `tweq` i kad uvjet nije ispunjen, a GCC to
    emitira za shared_ptr use-count guard → **svaki copy shared_ptra vješa
    guest**. Simptom: tihi hang, log stane, Cemu na ~200 % CPU. Uvijek pokreni
@@ -36,6 +37,14 @@ služi za potvrdu milestona.
    `elf2rpl`, i to nakon **svakog** rebuilda. Za pravi hardver ne treba.
 2. **`elf2rpl` traži nestripani ELF** — strip patch se gubi na svakom
    `cmake` re-runu.
+3. **Hellfire je Lua *mod*, ne game data.** `gbIsHellfire` postavlja **isključivo**
+   `mods/hf/init.lua` (`hellfire.enable()`), a mod loader je `optional=true` →
+   ako mod fali, **ne prijavi ništa**. Simptom: MPQ-ovi su tu, `HaveHellfire=1`,
+   dijalog *Enter Hellfire* se pojavi — a u izboru klasa su samo 3 klase, bez
+   Monka. Kod nas je mod **zapakiran u WUHB** kao `assets/mods/hf.mpq`
+   (`tools/wiiu/build-hf-mpq.sh`) i **mora biti packed MPQ**, ne direktorij —
+   inače se ignorira `saveExtension=hsv` i Hellfire dijeli `single_*.sv` s
+   Diablom.
 
 **Build + run u jednom potezu:**
 ```bash
@@ -44,12 +53,17 @@ tools/wiiu/wiiu-run.sh 40 --no-build   # samo re-run
 grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 ```
 
-**Sljedeći zadatak:** čišćenje branche (vidi `docs/wiiu-handoff.md` → "Next
-task"): throwaway test blokovi u `Source/engine/sound.cpp`, per-file `SFX_DBG`
-spam u `Source/effects.cpp`, `Source/platform/wiiu/stub.cpp`, CRLF churn u
-top-level `CMakeLists.txt`, redundantni `-DLUA_USE_C89` u
-`CMake/platforms/wiiu.cmake`. Nakon toga: mreža (`NONET=OFF` + `nsysnet`), pa
-polish (`DEVILUTIONX_GAMEPAD_TYPE Nintendo`, TV/DRC docking, HOME/ProcUI).
+**Sljedeći zadatak:** **još nije odlučen** — treba brainstormati koji feature
+napasti. Kandidati: **lokalni multiplayer na jednom Wii U-u** (2–4 igrača,
+split-screen / zajednički ekran / hibrid), **mrežna igra** (`NONET=OFF` +
+`nsysnet`), ili polish (`DEVILUTIONX_GAMEPAD_TYPE Nintendo`, TV/DRC docking,
+HOME/ProcUI). Detalji u `docs/wiiu-handoff.md` → "Next task".
+
+Nakon što se odluči, prvo ide **čišćenje branche** (throwaway `tweq` test blokovi
+u `Source/engine/sound.cpp`, per-file `SFX_DBG` spam u `Source/effects.cpp`,
+`Source/platform/wiiu/stub.cpp`, CRLF churn u top-level `CMakeLists.txt`,
+redundantni `-DLUA_USE_C89` u `CMake/platforms/wiiu.cmake`) — **ali ne prije**,
+jer debug output nam treba za razvoj featura.
 
 **Pravila rada:**
 - Debug output (OSReport `DBG`/`SND_DBG`/`SMPL_DBG`/`SFX_DBG`) **ostaje u treeu**

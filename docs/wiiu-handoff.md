@@ -11,14 +11,16 @@ macOS, from the same self-contained Aroma-layout WUHB** — display, assets,
 keyboard/mouse, text input, audio (SFX + music), gameplay and savegames all
 work, and nothing is written to the SD card root.
 
-**Both the shareware and the full game (Diablo + Hellfire) work.** The shareware
-data is packaged inside the WUHB so the port boots out of the box; drop the
-retail MPQs next to the WUHB for the full game — see
+**Shareware, the full game and the Hellfire expansion all work**, and the
+artifact is **fully self-contained**: engine, shareware fallback and the Hellfire
+mod are inside the WUHB. The SD card carries only the retail MPQs (the user's own
+game data) and whatever the game writes — see
 [Full game + Hellfire](#-full-game--hellfire) below.
 
-**Real hardware was validated on 7 Nov 2026** (see below). Development stays
-Cemu-first because that loop is much faster; the Wii U is for confirming
-milestones.
+**Real hardware was validated on 7 and 8 Nov 2026** (see below). Development
+stays Cemu-first because that loop is much faster; the Wii U is for confirming
+milestones. Everything on the Wii U so far has matched Cemu exactly, so the
+Cemu loop is trustworthy.
 
 ## ⚡ Quick start
 
@@ -46,11 +48,15 @@ grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
   `tools/wiiu/package-wuhb.sh` builds a self-contained ~41 MB WUHB.
 - **Real hardware (Aroma)** — the same WUHB boots on a Wii U, mounts its content
   at `/vol/content`, resolves identical paths, and plays with audio + saves
-- **Full game + Hellfire** — `DIABDAT.MPQ` + the four `hellfire.mpq`/`hf*.mpq`
-  files are picked up from the SD data directory, with intro cinematics
-- Build/package pipeline + the Cemu `tweq` workaround, both scripted in `tools/wiiu/`
+- **Full game** — `DIABDAT.MPQ` is picked up from the SD data directory, giving
+  `gbIsSpawn=0` and the intro cinematics
+- **Hellfire** — the expansion is a Lua **mod**; it is packed into `hf.mpq` and
+  shipped *inside* the WUHB, so no `mods/` directory is needed on the SD card.
+  Hellfire gets its own `.hsv` save namespace
+- Build/package pipeline (including the mod packing) + the Cemu `tweq` workaround,
+  all scripted in `tools/wiiu/`
 
-## ⚠️ Two things that will bite you
+## ⚠️ Three things that will bite you
 
 1. **The Cemu `tweq` bug.** Cemu 2.6.0 takes `tweq` traps even when the
    condition is false, and GCC emits `tweq` for libstdc++'s shared_ptr
@@ -63,12 +69,25 @@ grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 2. **`elf2rpl` needs an unstripped ELF.** The strip patch is lost on every
    `cmake` re-run; `wiiu-run.sh` re-applies it.
 
-## ✅ Real hardware (Aroma) — validated 7 Nov 2026
+3. **Hellfire is a Lua *mod*, and its loader is silent.** `gbIsHellfire` is set
+   only by `mods/hf/init.lua`, and `RunScript(..., optional=true)` reports nothing
+   when a mod is missing. The symptom is deceptive: the MPQs are present,
+   `HaveHellfire=1`, the *Enter Hellfire* dialog appears — and the class list
+   still has just three classes, no Monk. Check `assets/mods/hf.mpq` is inside
+   the WUHB. See [Full game + Hellfire](#-full-game--hellfire).
+
+## ✅ Real hardware (Aroma) — validated 7–8 Nov 2026
 
 The packaged WUHB was copied to `sd:/wiiu/apps/devilutionx/` and booted on a real
 Wii U under Aroma. **Everything works**: main menu, input, audio, gameplay, save
 and load. The WUHB content is mounted at `/vol/content` exactly as on Cemu, and
 all four resolved paths are identical.
+
+On 8 Nov 2026 the **final self-contained artifact** was validated the same way:
+engine + shareware assets + `mods/hf.mpq` in one WUHB, SD card carrying only the
+retail MPQs and the game's own files. Hellfire plays identically to Cemu, which
+is what makes the Cemu-first loop trustworthy — the Wii U is only needed to
+confirm milestones.
 
 From `boot-diag.txt` on the hardware boot:
 
@@ -148,6 +167,51 @@ The option is `OptionEntryFlags::Invisible` in `Source/options.cpp`, so it is
 **not** in the settings menu — edit `diablo.ini`, or start once with `Game=0`
 and use the dialog. A fresh card starts at `0`.
 
+#### `Game` is only the prompt — the real switch is the `hf` mod
+
+The expansion itself is a Lua **mod**, and `gbIsHellfire` is set only by
+`mods/hf/init.lua` calling `hellfire.enable()`. Having the MPQs is **not enough**:
+if the mod is missing, the script loader
+(`RunScript(..., /*optional=*/true)`) fails **silently** — no log line anywhere —
+and you get the *Enter Hellfire* dialog, a normal-looking game, and **only three
+classes, no Monk, no Hive or Crypt**. That was the bug that took longest to find.
+
+So: `[Mods] hf=1` in `diablo.ini` must be set **and** the mod must be findable.
+The port ships it inside the WUHB as `assets/mods/hf.mpq`, so the SD card needs
+nothing. If you ever rebuild the mod:
+
+```bash
+tools/wiiu/build-hf-mpq.sh      # mods/hf/  ->  build-wiiu-release/mods/hf.mpq
+tools/wiiu/package-wuhb.sh      # stages it into the WUHB
+```
+
+It has to be a **packed MPQ**, not a loose directory: only packed mods register a
+mod identifier, which is what makes the manifest's `saveExtension=hsv` take
+effect. As a loose directory Hellfire silently falls back to the Diablo save
+namespace. Full explanation:
+[`wiiu-progress.md`](wiiu-progress.md#11-the-hellfire-expansion-is-a-lua-mod-not-game-data).
+
+### Saves: Diablo and Hellfire are separate
+
+Save files are `<prefix><n>.<ext>`, and both parts matter:
+
+| | Prefix | Extension |
+|---|---|---|
+| shareware | `spawn_` / `share_` | `sv` |
+| full game, Diablo | `single_` / `multi_` | `sv` |
+| full game, Hellfire | `single_` / `multi_` | **`hsv`** |
+
+Consequences worth knowing:
+
+- A character made in **shareware** does not appear in the full game. Renaming
+  `spawn_1.sv` → `single_1.sv` brings it across.
+- A **Diablo** character does not appear in **Hellfire**, and copying the file
+  across does **not** work — the names *inside* the save archive are numbered by
+  the dungeon-level count (17 vs 25), so the copy is rewritten and then fails with
+  *"Unable to open save file archive"*. **Play Hellfire with a fresh
+  character.** Details:
+  [`wiiu-progress.md`](wiiu-progress.md#12-diablo-and-hellfire-saves-are-not-interchangeable).
+
 ### Why the MPQs go next to the WUHB
 
 `GetMPQSearchPaths()` (`Source/engine/assets.cpp:441`) searches BasePath →
@@ -193,9 +257,22 @@ The resolved-paths section appears twice: once during `wiiu_init()` and once
 re-checked after `ApplicationInit()`. The file is **overwritten on every boot**,
 so read it before relaunching.
 
-## 🎯 Next task: cleanup
+## 🎯 Next task: undecided — brainstorm, then this cleanup
 
-**Goal:** make the branch presentable — before touching network or polish.
+The branch has reached a good baseline: everything works on both Cemu and real
+hardware, and the artifact is self-contained. **The next feature is still to be
+chosen.** Candidates on the table:
+
+- **Local multiplayer on one Wii U** — 2–4 players with their own controllers.
+  Three shapes were proposed: (a) split-screen, Mario Kart style; (b) everyone on
+  one shared screen, so nobody can wander off alone; (c) a hybrid that stays
+  shared while the party is together and splits when a player walks away.
+- **Network multiplayer** — `NONET=OFF` + `nsysnet`, mirroring
+  `Source/platform/switch/network.cpp`.
+- **Polish** — `DEVILUTIONX_GAMEPAD_TYPE Nintendo`, TV/DRC docking, HOME/ProcUI.
+
+Whenever that is settled, this cleanup comes first (it makes the feature diff
+easier to read, and the debug output it removes is not needed for the feature):
 
 Nothing here changes behaviour; it is almost entirely removal.
 
@@ -220,17 +297,23 @@ After that: **network** (`NONET=OFF` + `nsysnet`, mirroring
 
 ```
 devilutionx.wuhb
-└── /content/assets/…        read-only, mounted at /vol/content/assets
-                             (spawn.mpq + fonts/data/…, the shareware fallback)
+└── /content/assets/…           read-only, mounted at /vol/content/assets
+    ├── spawn.mpq               shareware fallback (fonts/, data/, ui_art/…)
+    └── mods/hf.mpq             the Hellfire mod, packed
 
-sd:/wiiu/apps/devilutionx/   writable, created on first run
-├── devilutionx.wuhb         on the real card (launched from here)
-├── DIABDAT.MPQ              optional: full game data
-├── hellfire.mpq + hf*.mpq   optional: Hellfire expansion
+sd:/wiiu/apps/devilutionx/      writable, created on first run
+├── devilutionx.wuhb            on the real card (launched from here)
+├── DIABDAT.MPQ                 retail base game data
+├── hellfire.mpq + hf*.mpq      retail Hellfire data
 ├── diablo.ini
-├── save_0.sv
-└── boot-diag.txt            <- rewritten on every boot, see above
+├── single_0.sv                 one per character (Diablo)
+├── single_0.hsv                Hellfire characters, separate namespace
+├── stash.sv
+└── boot-diag.txt               <- rewritten on every boot, see above
 ```
+
+There is **no `mods/` directory on the SD card** — the mod lives in the WUHB.
+`diablo.ini`, the saves and `boot-diag.txt` are the only files the game creates.
 
 - SDL2 for Wii U has **no filesystem backend** — `SDL_GetBasePath()` and
   `SDL_GetPrefPath()` always return `NULL`, so `wiiu_init()` resolves every path
@@ -250,7 +333,8 @@ sd:/wiiu/apps/devilutionx/   writable, created on first run
 | `CMake/platforms/wiiu.cmake` | Platform build config (`NONET=ON`, sound on) |
 | `3rdParty/Lua/CMakeLists.txt` | `WIIU` in the `LUA_USE_C89` list |
 | `tools/wiiu/wiiu-run.sh` | Build → package → run → log |
-| `tools/wiiu/package-wuhb.sh` | Packages the self-contained Aroma-layout WUHB |
+| `tools/wiiu/package-wuhb.sh` | Packages the self-contained Aroma-layout WUHB (assets + `mods/hf.mpq`) |
+| `tools/wiiu/build-hf-mpq.sh` | Packs `mods/hf/` into `hf.mpq` (needs `smpq`; uses Docker if missing) |
 | `tools/wiiu/cemu-tweq-workaround.py` | Cemu `tweq` workaround |
 | `tools/wiiu/extract-gog-mpqs.sh` | Pulls the retail MPQs out of the GOG installer |
 | `Packaging/wiiu/icon.png` | 128×128 WUHB icon |
@@ -274,7 +358,17 @@ sd:/wiiu/apps/devilutionx/   writable, created on first run
 
 ## Notes for whoever continues
 
-- **Keep the debug logging** — it is the primary debugging tool for this port.
+- **Keep the debug logging** — it is the primary debugging tool for this port,
+  and the next feature (multiplayer) will need it more, not less. That includes
+  the two throwaway `tweq` test blocks in `Source/engine/sound.cpp` and the
+  per-file `SFX_DBG` spam in `Source/effects.cpp`, which are listed under cleanup
+  but deliberately **not** removed yet.
+- **Hellfire is a mod.** If Hellfire ever silently stops working (three classes,
+  no Monk), check that `assets/mods/hf.mpq` is inside the WUHB. The mod loader is
+  `optional=true`, so it never reports the failure.
+- **Never copy saves between `.sv` and `.hsv`** — the archive's internal names are
+  numbered by dungeon-level count, so the file gets rewritten and then fails to
+  load. See [Saves](#saves-diablo-and-hellfire-are-separate).
 - `Source/engine/sound.cpp` still has two throwaway test blocks (an atomic test
   and a `__builtin_trap` test) from the `tweq` investigation. Harmless, but
   remove them before an upstream PR.
