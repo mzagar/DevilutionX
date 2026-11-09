@@ -39,6 +39,9 @@ if(CMAKE_TOOLCHAIN_FILE MATCHES "vcpkg.cmake$")
   option(USE_GETTEXT_FROM_VCPKG "Add vcpkg dependency for gettext[tools] for compiling translations" OFF)
 endif()
 option(BUILD_TESTING "Build tests." ON)
+# No-UI network peer (test/network_peer.cpp) for TCP multiplayer bring-up and
+# regression testing. Independent of BUILD_TESTING so console builds can use it.
+option(BUILD_NETWORK_HARNESS "Build the no-UI network test peer." OFF)
 
 # These must be included after the options above but before the `project` call.
 include(VcPkgManifestFeatures)
@@ -441,6 +444,10 @@ endif()
 
 if(BUILD_TESTING)
   include(Tests)
+endif()
+
+if(BUILD_NETWORK_HARNESS)
+  include(NetworkHarness)
 endif()
 
 include(functions/set_relative_file_macro)

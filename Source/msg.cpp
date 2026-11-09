@@ -30,6 +30,7 @@
 #include "config.h"
 #include "control/control.hpp"
 #include "dead.h"
+#include "dvlnet/spawned_monster_delta.hpp"
 #include "engine/backbuffer_state.hpp"
 #include "engine/random.hpp"
 #include "engine/world_tile.hpp"
@@ -228,12 +229,10 @@ struct DObjectStr {
 	_cmd_id bCmd;
 };
 
-struct DSpawnedMonster {
-	size_t typeIndex;
-	uint32_t seed;
-	uint8_t golemOwnerPlayerId;
-	int16_t golemSpellLevel;
-};
+// The delta wire format must not depend on the target ABI (32-bit big-endian
+// Wii U vs. 64-bit little-endian desktop), see spawned_monster_delta.hpp.
+using DSpawnedMonster = net::SpawnedMonster;
+using net::SpawnedMonsterWireRecordSize;
 
 struct DLevel {
 	TCmdPItem item[MAXITEMS];
@@ -292,7 +291,7 @@ std::byte sgRecvBuf[1U                                               /* marker b
     + ((sizeof(WorldTilePosition) + sizeof(_cmd_id)) * MAXOBJECTS)   /* location/action pairs for the object interactions */
     + sizeof(DLevel::monster)                                        /* latest monster state */
     + sizeof(uint16_t)                                               /* spawned monster count */
-    + ((sizeof(uint16_t) + sizeof(DSpawnedMonster)) * MaxMonsters)]; /* spawned monsters */
+    + (SpawnedMonsterWireRecordSize * MaxMonsters)]; /* spawned monsters */
 
 _cmd_id sgbRecvCmd;
 ankerl::unordered_dense::map<uint8_t, LocalLevel> LocalLevels;
@@ -651,51 +650,12 @@ const std::byte *DeltaImportMonster(const std::byte *src, const std::byte *end, 
 
 std::byte *DeltaExportSpawnedMonsters(std::byte *dst, const ankerl::unordered_dense::map<size_t, DSpawnedMonster> &spawnedMonsters)
 {
-	uint16_t size = Swap16LE(static_cast<uint16_t>(spawnedMonsters.size()));
-	memcpy(dst, &size, sizeof(uint16_t));
-	dst += sizeof(uint16_t);
-
-	for (const auto &deltaSpawnedMonster : spawnedMonsters) {
-		uint16_t monsterId = Swap16LE(static_cast<uint16_t>(deltaSpawnedMonster.first));
-		memcpy(dst, &monsterId, sizeof(uint16_t));
-		dst += sizeof(uint16_t);
-
-		memcpy(dst, &deltaSpawnedMonster.second, sizeof(DSpawnedMonster));
-		dst += sizeof(DSpawnedMonster);
-	}
-
-	return dst;
+	return net::ExportSpawnedMonsters(dst, spawnedMonsters);
 }
 
 const std::byte *DeltaImportSpawnedMonsters(const std::byte *src, const std::byte *end, ankerl::unordered_dense::map<size_t, DSpawnedMonster> &spawnedMonsters)
 {
-	if (src == nullptr || src + sizeof(uint16_t) > end)
-		return nullptr;
-
-	uint16_t size;
-	memcpy(&size, src, sizeof(uint16_t));
-	size = Swap16LE(size);
-	src += sizeof(uint16_t);
-	if (size > MaxMonsters)
-		return nullptr;
-
-	const size_t requiredBytes = (sizeof(uint16_t) + sizeof(DSpawnedMonster)) * size;
-	if (src + requiredBytes > end)
-		return nullptr;
-
-	for (size_t i = 0; i < size; i++) {
-		uint16_t monsterId;
-		memcpy(&monsterId, src, sizeof(uint16_t));
-		monsterId = Swap16LE(monsterId);
-		src += sizeof(uint16_t);
-
-		DSpawnedMonster spawnedMonster;
-		memcpy(&spawnedMonster, src, sizeof(DSpawnedMonster));
-		src += sizeof(DSpawnedMonster);
-		spawnedMonsters.emplace(monsterId, spawnedMonster);
-	}
-
-	return src;
+	return net::ImportSpawnedMonsters(src, end, MaxMonsters, spawnedMonsters);
 }
 
 std::byte *DeltaExportJunk(std::byte *dst)
@@ -2618,10 +2578,12 @@ size_t OnSpawnMonster(const TCmdSpawnMonster &message, const Player &player)
 		return sizeof(message);
 	}
 	const uint8_t golemSpellLevel = std::min(message.golemSpellLevel, static_cast<uint8_t>(MaxSpellLevel + Players[golemOwnerPlayerId]._pISplLvlAdd));
+	// The seed is stored little-endian in the command (see NetSendCmdSpawnMonster).
+	const uint32_t seed = Swap32LE(message.seed);
 
 	DLevel &deltaLevel = GetDeltaLevel(player);
 
-	deltaLevel.spawnedMonsters[monsterId] = { typeIndex, message.seed, golemOwnerPlayerId, golemSpellLevel };
+	deltaLevel.spawnedMonsters[monsterId] = { typeIndex, seed, golemOwnerPlayerId, golemSpellLevel };
 	// Override old monster delta information
 	auto &deltaMonster = deltaLevel.monster[monsterId];
 	deltaMonster.position = position;
@@ -2630,7 +2592,7 @@ size_t OnSpawnMonster(const TCmdSpawnMonster &message, const Player &player)
 	deltaMonster.mactive = 0;
 
 	if (player.isOnActiveLevel() && &player != MyPlayer)
-		InitializeSpawnedMonster(position, message.dir, typeIndex, monsterId, message.seed, golemOwnerPlayerId, golemSpellLevel);
+		InitializeSpawnedMonster(position, message.dir, typeIndex, monsterId, seed, golemOwnerPlayerId, golemSpellLevel);
 	return sizeof(message);
 }
 
@@ -2781,7 +2743,7 @@ void DeltaExportData(uint8_t pnum)
 		    + ((sizeof(WorldTilePosition) + sizeof(DObjectStr)) * deltaLevel.object.size())       /* location/action pairs for the object interactions */
 		    + sizeof(deltaLevel.monster)                                                          /* latest monster state */
 		    + sizeof(uint16_t)                                                                    /* spawned monster count */
-		    + ((sizeof(uint16_t) + sizeof(DSpawnedMonster)) * deltaLevel.spawnedMonsters.size()); /* spawned monsters */
+		    + (SpawnedMonsterWireRecordSize * deltaLevel.spawnedMonsters.size());                /* spawned monsters */
 		const std::unique_ptr<std::byte[]> dst { new std::byte[bufferSize] };
 
 		std::byte *dstEnd = &dst.get()[1];

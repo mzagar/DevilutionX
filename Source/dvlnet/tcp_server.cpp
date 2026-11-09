@@ -17,25 +17,66 @@ tcp_server::tcp_server(asio::io_context &ioc, const std::string &bindaddr,
     : ioc(ioc)
     , pktfty(pktfty)
 {
-	auto addr = asio::ip::make_address(bindaddr);
-	auto ep = asio::ip::tcp::endpoint(addr, port);
-	acceptor = std::make_unique<asio::ip::tcp::acceptor>(ioc, ep, true);
+	boundAddress_ = asio::ip::make_address(bindaddr);
+	boundPort_ = port;
+	const asio::ip::tcp::endpoint ep(boundAddress_, port);
+
+	// Explicit error handling instead of the throwing constructor: a console
+	// socket stack may reject individual options (reuse_address is optional),
+	// and asio's exception hook is fatal here.
+	acceptor = std::make_unique<asio::ip::tcp::acceptor>(ioc);
+	asio::error_code errorCode;
+	acceptor->open(ep.protocol(), errorCode);
+	if (errorCode)
+		LogError("tcp_server: open failed: {}", errorCode.message());
+	acceptor->set_option(asio::ip::tcp::acceptor::reuse_address(true), errorCode);
+	if (errorCode) {
+		LogError("tcp_server: reuse_address failed: {}", errorCode.message());
+		errorCode.clear();
+	}
+	acceptor->bind(ep, errorCode);
+	if (errorCode)
+		LogError("tcp_server: bind {}:{} failed: {}", boundAddress_.to_string(), port, errorCode.message());
+	acceptor->listen(asio::socket_base::max_listen_connections, errorCode);
+	if (errorCode)
+		LogError("tcp_server: listen failed: {}", errorCode.message());
 	StartAccept();
 }
 
 std::string tcp_server::LocalhostSelf()
 {
-	auto addr = acceptor->local_endpoint().address();
-	if (addr.is_unspecified()) {
-		if (addr.is_v4()) {
-			return asio::ip::address_v4::loopback().to_string();
+	// The host connects to its own listener through `tcp_client::join()`,
+	// which parses "host:port". Return the port as well: the bound port is
+	// not necessarily the default 6112 (e.g. when Network.port is set),
+	// and without it the self-connect went to the wrong port.
+	asio::ip::address addr = boundAddress_;
+	unsigned short port = boundPort_;
+
+	// Cemu's nsysnet reports getsockname() as successful but returns an
+	// out-of-range sockaddr length, which makes asio's endpoint::resize()
+	// throw (fatally in this build) even from the error_code overload. The
+	// requested endpoint is what we need anyway, so only query the socket for
+	// the port when it was left unspecified (port 0 = ephemeral).
+	if (boundPort_ == 0) {
+		asio::error_code errorCode;
+		const auto localEndpoint = acceptor->local_endpoint(errorCode);
+		if (!errorCode) {
+			addr = localEndpoint.address();
+			port = localEndpoint.port();
 		}
-		if (addr.is_v6()) {
-			return asio::ip::address_v6::loopback().to_string();
-		}
-		ABORT();
 	}
-	return addr.to_string();
+
+	if (addr.is_unspecified()) {
+		if (addr.is_v6()) {
+			addr = asio::ip::address_v6::loopback();
+		} else {
+			addr = asio::ip::address_v4::loopback();
+		}
+	}
+	if (addr.is_v6()) {
+		return "[" + addr.to_string() + "]:" + std::to_string(port);
+	}
+	return addr.to_string() + ":" + std::to_string(port);
 }
 
 tcp_server::scc tcp_server::MakeConnection()
@@ -197,13 +238,27 @@ std::expected<void, PacketError> tcp_server::StartSend(const scc &con, buffer_t 
 	std::expected<buffer_t, PacketError> frame = frame_queue::MakeFrame(pktData, flags);
 	if (!frame.has_value())
 		return std::unexpected(frame.error());
-	std::unique_ptr<buffer_t> framePtr = std::make_unique<buffer_t>(*frame);
-	const asio::mutable_buffer buf = asio::buffer(*framePtr);
-	asio::async_write(con->socket, buf,
+	con->sendQueue.push_back(std::move(*frame));
+	if (!con->sending)
+		SendNext(con);
+	return {};
+}
+
+void tcp_server::SendNext(const scc &con)
+{
+	if (con->sendQueue.empty()) {
+		con->sending = false;
+		return;
+	}
+	con->sending = true;
+	// The write handler owns this buffer, so the queue can keep receiving
+	// while the previous frame is on the wire.
+	auto framePtr = std::make_unique<buffer_t>(std::move(con->sendQueue.front()));
+	con->sendQueue.pop_front();
+	asio::async_write(con->socket, asio::buffer(*framePtr),
 	    [this, con, frame = std::move(framePtr)](const asio::error_code &ec, size_t bytesSent) {
 		    HandleSend(con, ec, bytesSent);
 	    });
-	return {};
 }
 
 void tcp_server::HandleSend(const scc &con, const asio::error_code &ec,
@@ -211,8 +266,12 @@ void tcp_server::HandleSend(const scc &con, const asio::error_code &ec,
 {
 	if (ec) {
 		Log("Network error: {}", ec.message());
+		con->sending = false;
+		con->sendQueue.clear();
 		DropConnection(con);
+		return;
 	}
+	SendNext(con);
 }
 
 void tcp_server::StartAccept()

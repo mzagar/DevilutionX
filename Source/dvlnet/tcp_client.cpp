@@ -196,8 +196,27 @@ void tcp_client::StartReceive()
 
 void tcp_client::HandleSend(const asio::error_code &error, size_t /*bytesSent*/)
 {
-	if (error)
+	if (error) {
+		sending = false;
+		sendQueue.clear();
 		RaiseIoHandlerError(error.message());
+		return;
+	}
+	SendNext();
+}
+
+void tcp_client::SendNext()
+{
+	if (sendQueue.empty()) {
+		sending = false;
+		return;
+	}
+	sending = true;
+	auto framePtr = std::make_unique<buffer_t>(std::move(sendQueue.front()));
+	sendQueue.pop_front();
+	asio::async_write(sock, asio::buffer(*framePtr), [this, frame = std::move(framePtr)](const asio::error_code &error, size_t bytesSent) {
+		HandleSend(error, bytesSent);
+	});
 }
 
 void tcp_client::HandleTcpErrorCode()
@@ -226,11 +245,9 @@ std::expected<void, PacketError> tcp_client::send(packet &pkt)
 	std::expected<buffer_t, PacketError> frame = frame_queue::MakeFrame(pkt.Data());
 	if (!frame.has_value())
 		return std::unexpected(frame.error());
-	std::unique_ptr<buffer_t> framePtr = std::make_unique<buffer_t>(*frame);
-	const asio::mutable_buffer buf = asio::buffer(*framePtr);
-	asio::async_write(sock, buf, [this, frame = std::move(framePtr)](const asio::error_code &error, size_t bytesSent) {
-		HandleSend(error, bytesSent);
-	});
+	sendQueue.push_back(std::move(*frame));
+	if (!sending)
+		SendNext();
 	return {};
 }
 
@@ -244,6 +261,17 @@ bool tcp_client::SNetLeaveGame(net::leaveinfo_t type)
 {
 	auto ret = base::SNetLeaveGame(type);
 	process_network_packets();
+	// Give the queued DISCONNECT frame a chance to reach the server before the
+	// socket is closed; otherwise peers see a dropped connection instead of the
+	// intended leave reason.
+	const uint32_t deadline = SDL_GetTicks() + 1000;
+	while (sending || !sendQueue.empty()) {
+		if (ioc.poll_one() == 0) {
+			if (static_cast<int32_t>(SDL_GetTicks() - deadline) >= 0)
+				break;
+			SDL_Delay(1);
+		}
+	}
 	if (local_server != nullptr)
 		local_server->Close();
 	sock.close();

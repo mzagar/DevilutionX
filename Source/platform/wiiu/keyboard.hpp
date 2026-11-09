@@ -3,13 +3,14 @@
 #include <string_view>
 
 /**
- * @brief Prompts the user for text input on Wii U.
+ * @brief Arms text input for a `UiEdit` field on Wii U.
  *
- * Uses the standard SDL keyboard event loop instead of the system swkbd
- * (which has a broken confirm button on Cemu).
+ * The field itself (rendering, typing, backspace, confirmation) is handled by
+ * the Diablo UI; this only enables SDL text events so an attached USB keyboard
+ * types directly into it. No system on-screen keyboard is shown.
  *
- * @param guide_text Hint text to display if the input is empty
- * @param initial_text Optional prefilled value
- * @param max_length Maximum bytes of input
+ * @param guide_text Hint text for the field (unused: the UI renders it)
+ * @param initial_text Current value (unused: the UI owns the buffer)
+ * @param max_length Maximum bytes of input (unused: the UI enforces it)
  */
 void wiiu_start_text_input(std::string_view guide_text, std::string_view initial_text, unsigned max_length);

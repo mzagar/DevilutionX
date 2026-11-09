@@ -447,7 +447,7 @@ bool UnPackNetItem(const Player &player, const ItemNetPack &packedItem, Item &it
 	}
 
 	const uint16_t creationFlags = Swap16LE(packedItem.item.wCI);
-	const uint32_t dwBuff = Swap16LE(packedItem.item.dwBuff);
+	const uint32_t dwBuff = Swap32LE(packedItem.item.dwBuff);
 	if (idx != IDI_GOLD)
 		ValidateField(creationFlags, IsCreationFlagComboValid(creationFlags));
 	if ((creationFlags & CF_TOWN) != 0)

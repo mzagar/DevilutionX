@@ -29,6 +29,8 @@ if(NOT NONET)
     target_link_libraries(libdevilutionx_wiiu PUBLIC asio)
   endif()
   if(PACKET_ENCRYPTION)
+    # No OS RNG on the console; this installs a libsodium backend (random.cpp).
+    target_sources(libdevilutionx_wiiu PRIVATE random.cpp)
     target_link_libraries(libdevilutionx_wiiu PUBLIC sodium)
   endif()
 endif()

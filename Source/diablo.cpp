@@ -8,6 +8,8 @@
 #include <string_view>
 
 #ifdef __WIIU__
+#include <unistd.h>
+
 #include <coreinit/debug.h>
 #include "platform/wiiu/init.hpp"
 #define DBG(fmt, ...) OSReport("DiabloMain: " fmt "\n", ##__VA_ARGS__)
@@ -1331,6 +1333,14 @@ void DiabloSplash()
 {
 	if (!gbShowIntro)
 		return;
+
+#ifdef __WIIU__
+	// Cemu pauses cinematic playback whenever its window loses focus, which
+	// makes the intro unusable in the Cemu dev loop. A marker file on the SD
+	// card skips the splash/intro; real hardware keeps the cinematics.
+	if (access((paths::PrefPath() + "skip-intro").c_str(), F_OK) == 0)
+		return;
+#endif
 
 	if (*GetOptions().StartUp.splash == StartUpSplash::LogoAndTitleDialog)
 		play_movie("gendata\\logo.smk", true);

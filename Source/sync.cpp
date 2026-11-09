@@ -290,7 +290,7 @@ size_t OnSyncData(const TSyncHeader &header, size_t maxCmdSize, const Player &pl
 		return wLen + sizeof(header);
 	}
 
-	assert(header.wLen % sizeof(TSyncMonster) == 0);
+	assert(wLen % sizeof(TSyncMonster) == 0);
 	const int monsterCount = static_cast<int>(wLen / sizeof(TSyncMonster));
 
 	const uint8_t level = header.bLevel;

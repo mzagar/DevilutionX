@@ -582,8 +582,9 @@ void selgame_Password_Init(size_t /*value*/)
 	const SDL_Rect rect4 = { (Sint16)(uiPosition.x + 305), (Sint16)(uiPosition.y + 211), 285, 33 };
 	vecSelGameDialog.push_back(std::make_unique<UiArtText>(_("Enter Password").data(), rect4, UiFlags::AlignCenter | UiFlags::FontSize30 | UiFlags::ColorUiSilver, 3));
 
-	// Allow password to be empty only when joining games
-	const bool allowEmpty = selgame_selectedGame == 2;
+	// An empty password means "no password" (the network layer then skips
+	// packet encryption), which is what a console without a keyboard needs.
+	const bool allowEmpty = true;
 	const SDL_Rect rect5 = { (Sint16)(uiPosition.x + 305), (Sint16)(uiPosition.y + 314), 285, 33 };
 	vecSelGameDialog.push_back(std::make_unique<UiEdit>(_("Enter Password"), selgame_Password, 15, allowEmpty, rect5, UiFlags::FontSize24 | UiFlags::ColorUiGold));
 
@@ -614,9 +615,7 @@ static bool IsGameCompatibleWithErrorMessage(const GameData &data)
 void selgame_Password_Select(size_t /*value*/)
 {
 	char *gamePassword = nullptr;
-	if (selgame_selectedGame == 0)
-		gamePassword = selgame_Password;
-	if (selgame_selectedGame == 2 && strlen(selgame_Password) > 0)
+	if (selgame_Password[0] != '\0')
 		gamePassword = selgame_Password;
 
 	// If there is an error, the error message won't necessarily be set.

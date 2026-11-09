@@ -13,6 +13,7 @@
 #endif
 
 #include "player.h"
+#include "utils/endian_swap.hpp"
 
 namespace devilution {
 namespace net {
@@ -137,11 +138,14 @@ std::expected<void, PacketError> base::HandleDisconnect(packet &pkt)
 		std::expected<leaveinfo_t, PacketError> leaveinfo = pkt.LeaveInfo();
 		if (!leaveinfo.has_value())
 			return std::unexpected(leaveinfo.error());
+		// _SNETEVENT::data is little-endian (see storm_net.hpp); consumers
+		// convert it back to native order (multi.cpp).
+		const uint32_t leaveReasonLE = Swap32LE(static_cast<uint32_t>(*leaveinfo));
 		_SNETEVENT ev;
 		ev.eventid = EVENT_TYPE_PLAYER_LEAVE_GAME;
 		ev.playerid = *newPlayer;
-		ev.data = reinterpret_cast<unsigned char *>(&*leaveinfo);
-		ev.databytes = sizeof(leaveinfo_t);
+		ev.data = const_cast<unsigned char *>(reinterpret_cast<const unsigned char *>(&leaveReasonLE));
+		ev.databytes = sizeof(leaveReasonLE);
 		RunEventHandler(ev);
 		DisconnectNet(*newPlayer);
 		ClearMsg(*newPlayer);

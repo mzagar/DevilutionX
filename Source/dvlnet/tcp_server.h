@@ -1,6 +1,7 @@
 #pragma once
 
 #include <array>
+#include <deque>
 #include <expected>
 #include <memory>
 #include <string>
@@ -46,6 +47,10 @@ private:
 		asio::ip::tcp::socket socket;
 		asio::steady_timer timer;
 		int timeout;
+		// asio forbids overlapping async_write calls on one socket; the server
+		// forwards packets from several sources at once, so writes are queued.
+		std::deque<buffer_t> sendQueue;
+		bool sending = false;
 		client_connection(asio::io_context &ioc)
 		    : socket(ioc)
 		    , timer(ioc)
@@ -58,6 +63,10 @@ private:
 	asio::io_context &ioc;
 	packet_factory &pktfty;
 	std::unique_ptr<asio::ip::tcp::acceptor> acceptor;
+	// Fallback for LocalhostSelf(): some platforms (Cemu's nsysnet, for one)
+	// fail getsockname() on the acceptor, so keep the requested endpoint.
+	asio::ip::address boundAddress_;
+	unsigned short boundPort_ = 0;
 	std::array<scc, MAX_PLRS> connections;
 	buffer_t game_init_info;
 
@@ -76,6 +85,7 @@ private:
 	std::expected<void, PacketError> StartSend(const scc &con, packet &pkt);
 	std::expected<void, PacketError> StartSend(const scc &con, PacketError::ErrorCode errorCode);
 	std::expected<void, PacketError> StartSend(const scc &con, buffer_t pktData, uint16_t flags);
+	void SendNext(const scc &con);
 	void HandleSend(const scc &con, const asio::error_code &ec, size_t bytesSent);
 	void StartTimeout(const scc &con);
 	void HandleTimeout(const scc &con, const asio::error_code &ec);

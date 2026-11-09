@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <memory>
 #include <string>
 
@@ -37,6 +38,11 @@ protected:
 private:
 	frame_queue recv_queue;
 	buffer_t recv_buffer = buffer_t(frame_queue::max_frame_size);
+	// asio forbids overlapping async_write calls on one socket. Echo replies
+	// are sent from inside the receive handler while the game thread may be
+	// sending, so writes are queued.
+	std::deque<buffer_t> sendQueue;
+	bool sending = false;
 
 	asio::io_context ioc;
 	asio::ip::tcp::resolver resolver = asio::ip::tcp::resolver(ioc);
@@ -47,6 +53,7 @@ private:
 
 	void HandleReceive(const asio::error_code &error, size_t bytesRead);
 	void StartReceive();
+	void SendNext();
 	void HandleSend(const asio::error_code &error, size_t bytesSent);
 	void HandleTcpErrorCode();
 

@@ -29,6 +29,13 @@ constexpr uint32_t LoadLE32(const T *b)
 }
 
 template <typename T>
+constexpr uint64_t LoadLE64(const T *b)
+{
+	return static_cast<uint64_t>(LoadLE32(b))
+	    | (static_cast<uint64_t>(LoadLE32(b + 4)) << 32);
+}
+
+template <typename T>
 constexpr uint32_t LoadBE32(const T *b)
 {
 	static_assert(sizeof(T) == 1, "invalid argument");

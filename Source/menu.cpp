@@ -5,6 +5,9 @@
  */
 
 #include <cstdint>
+#ifdef __WIIU__
+#include <unistd.h>
+#endif
 
 #ifdef USE_SDL3
 #include <SDL3/SDL_surface.h>
@@ -21,6 +24,7 @@
 #include "game_mode.hpp"
 #include "init.hpp"
 #include "movie.h"
+#include "utils/paths.h"
 #include "options.h"
 #include "pfile.h"
 #include "storm/storm_net.hpp"
@@ -93,6 +97,12 @@ bool InitMultiPlayerMenu()
 
 void PlayIntro()
 {
+#ifdef __WIIU__
+	// The Cemu dev loop skips the cinematics (see DiabloSplash): Cemu pauses
+	// them whenever its window loses focus, which stalls every automated test.
+	if (access((paths::PrefPath() + "skip-intro").c_str(), F_OK) == 0)
+		return;
+#endif
 	music_stop();
 	if (gbIsHellfire)
 		play_movie("gendata\\Hellfire.smk", true);

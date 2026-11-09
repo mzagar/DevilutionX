@@ -22,10 +22,12 @@ stays Cemu-first because that loop is much faster; the Wii U is for confirming
 milestones. Everything on the Wii U so far has matched Cemu exactly, so the
 Cemu loop is trustworthy.
 
-**Network multiplayer parity is in progress.** The Wii U socket layer
-(`nsysnet`), asio and libsodium all work: the build now has `NONET=OFF`, and an
-asio TCP client completed a real HTTP round-trip under Cemu. The remaining
-blocker is text input in the multiplayer dialogs — see
+**Network multiplayer (TCP) works with the Wii U as the joining peer**: a real
+dvlnet session against a desktop host was validated in Cemu — join, game data,
+broadcast/unicast messages, turns, passwords and leave reasons all pass, using
+the same engine code as every other platform. The Wii U as *host* is blocked by
+a Cemu self-connect crash (not our code) and needs a real console to confirm.
+The machine-readable test harness and the exact commands are in
 [Next task](#-next-task-finish-network-multiplayer-parity).
 
 ## ⚡ Quick start
@@ -46,7 +48,7 @@ grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 
 - Display / SDL-GX2 renderer, main menu and in-game rendering
 - Keyboard/mouse — works once mapped to Controller 1 (GamePad) in Cemu input settings
-- Text input — `keyboard.cpp` bypasses the broken system swkbd
+- Text input — the game's own `UiEdit` + a USB keyboard (`nsyskbd`); Cemu has neither
 - **Audio** — `NOSOUND=OFF`, SDL2 Wii U AX driver + bundled SDL_audiolib
 - Lua — `LUA_USE_C89` on PowerPC
 - **Aroma-layout packaging** — assets inside the WUHB (`/vol/content/assets`),
@@ -62,6 +64,15 @@ grep "\[OSConsole\]" ~/Library/Application\ Support/Cemu/log.txt
 - **Network stack (asio + nsysnet + libsodium)** — `NONET=OFF`; asio TCP
   `resolve`/`connect`/`write`/`read` verified end-to-end under Cemu, which
   bridges `nsysnet` to the host network
+- **Network multiplayer (TCP), no-UI harness** — `test/network_peer.cpp` +
+  `tools/wiiu/package-network-peer.sh`: a real Wii U ↔ desktop dvlnet session
+  (join, messages, turns, private games, leave reasons) with JSONL results,
+  no menus or input needed. See
+  [Next task](#-next-task-finish-network-multiplayer-parity)
+- **Secure RNG for libsodium** — the console has no OS RNG, so
+  `Source/platform/wiiu/random.cpp` installs a ChaCha20 DRBG (or `/dev/urandom`
+  when available) before `sodium_init()`; previously the first join aborted
+  with `OSFatal`
 - Build/package pipeline (including the mod packing) + the Cemu `tweq` workaround,
   all scripted in `tools/wiiu/`
 
@@ -286,48 +297,170 @@ afterwards (a proposal exists in
 
 | Milestone | State |
 |---|---|
-| **M0** feasibility probe | ✅ **Cemu's `nsysnet` is real** — it bridges to the host network (a real HTTP GET through asio returned `HTTP/1.1 200 OK`) |
-| **M1** socket init | ✅ `wiiu_enable_network()` called from `wiiu_init()` |
-| **M2** asio shims | ✅ 13 files under `Source/platform/wiiu/asio/` (copied from Switch/3DS) |
-| **M3** encryption (`libsodium`) | ✅ bundled, builds |
-| **M4** a real dvlnet session | ⬜ **blocked by the text-input bug** |
-| **M5** address-entry UX | ⬜ not started |
+| **M0** feasibility probe | ✅ Cemu's `nsysnet` bridges to the host network |
+| **M1** socket init | ✅ `wiiu_enable_network()` from `wiiu_init()` |
+| **M2** asio shims | ✅ 13 files under `Source/platform/wiiu/asio/` |
+| **M3** encryption (`libsodium`) | ✅ bundled, builds, **and has a working RNG** (finding 20) |
+| **M3.5** dvlnet reachability | ✅ boot probe + raw socket probe (`probe = socket` in the harness) |
+| **M4a** real dvlnet session, Wii U as client | ✅ **validated in Cemu** — harness (join, game data, messages, turns, passwords, `LEAVE_EXIT`) **and the real game** (macOS host + Wii U joiner, both playable) |
+| **M4b** real dvlnet session, Wii U as host | ⬜ blocked in Cemu (guest self-connect crashes Cemu); needs real hardware |
+| **M5** address-entry UX + multiplayer UI | ⬜ not started |
+| **M6** real hardware multiplayer | ⬜ needs the M4b run on a console |
+| **ZT** ZeroTier provider | ⬜ separate milestone — **not in the build** (`DISABLE_ZERO_TIER ON`); the connection menu shows TCP + Loopback only |
 
-### Blockers and open questions
+Shared protocol fixes that came out of this work (32-bit BE vs 64-bit LE, the
+asio write serialisation bug, the custom-port self-connect) are listed as
+findings 16–20 in [`wiiu-progress.md`](wiiu-progress.md).
 
-1. **Text input in text fields does not work — this is the immediate blocker.**
-   In *Create Game* the password field takes no keystrokes and *OK* does not
-   advance; same for the address field in *Client-Server (TCP)*. `keyboard.cpp`
-   bypasses the system swkbd for the single-player character name, so the
-   multiplayer dialogs either do not route through it or need `SDL_TEXTINPUT`
-   plumbed. **Nothing multiplayer can be tested until this works.**
-2. **ZeroTier is missing from the connection list.** `set(DISABLE_ZERO_TIER ON)`
-   in `CMake/platforms/wiiu.cmake` is what hides it. The user wants it (internet
-   play without a shared LAN), so it needs a feasibility check —
-   `zerotier_lwip` vs `zerotier_native` on devkitPPC — **before promising it**.
-3. **A second peer is needed for testing** — see below.
+### ZeroTier is not in this build
 
-### Testing this without the user
+`CMake/platforms/wiiu.cmake` sets `DISABLE_ZERO_TIER ON` (the same as the
+Switch profile), and `SelconnLoad()` only adds the ZeroTier entry when that
+macro is undefined. That is why the connection menu lists **Client-Server
+(TCP)** and **Loopback** only — it is a compile-time exclusion, not a Cemu
+problem.
 
-The Cemu-first loop can cover multiplayer too, given a second peer and the
-ability to drive the UI.
+The reason is size, not policy. DevilutionX does not use a system ZeroTier
+client: it embeds **libzt**, which brings its own user-space TCP/IP stack
+(lwIP, NAT-PMP, UPnP) plus the node identity and relay logic. The TCP provider
+reuses the existing asio + `nsysnet` sockets, so it was the parity-first
+choice. A Wii U provider would need libzt ported to devkitPPC/wut
+(`zerotier_lwip` vs `zerotier_native` is the open feasibility question).
+
+ZeroTier still works at the network level today:
+
+- Run ZeroTier One on the host OS (macOS for Cemu, or a router/bridge for real
+  hardware).
+- Host the game over TCP and let remote players reach the machine's ZeroTier
+  address; on Cemu, `nsysnet` bridges the guest sockets to the host stack, so
+  the join dialog accepts a `10.x.y.z` address.
+- Port 6112 must be reachable on the ZeroTier interface.
+
+The only thing lost is game discovery: the TCP provider has no gamelist, so the
+address must be entered (or taken from `[Network] Previous Host`).
+
+### How to run a real session without the UI
+
+The harness drives the same SNet/dvlnet code as the game but skips menus,
+archives and heroes, so it runs on the console without input.
+
+Desktop build:
 
 ```bash
-# Preferred: two Cemu instances with different SD/MLC dirs — one hosts, one joins.
-# Fallback: a native macOS DevilutionX build joins the Cemu instance.
+cmake -S . -B build-net -G Ninja -DCMAKE_BUILD_TYPE=Debug -DBUILD_TESTING=ON \
+  -DBUILD_NETWORK_HARNESS=ON -DNONET=OFF -DDISABLE_TCP=OFF -DDISABLE_ZERO_TIER=ON \
+  -DPACKET_ENCRYPTION=ON -DDEVILUTIONX_SYSTEM_GOOGLETEST=OFF -DDEVILUTIONX_SYSTEM_BENCHMARK=OFF
+cmake --build build-net --target network_peer dvlnet_wire_test
+
+# Desktop ↔ desktop matrix (public, private, 4 players, custom port, drop,
+# wrong password) plus the codec/round-trip tests:
+./build-net/dvlnet_wire_test
+python3 test/run_network_scenario.py --peer build-net/network_peer --players 4 --rounds 512
 ```
 
-Cemu bridges `nsysnet` to the host network, so `127.0.0.1:6112` works between
-two Cemu instances, and between Cemu and a native build.
-
-Driving the menus needs keystroke injection, which needs the terminal running pi
-to be enabled under **System Settings → Privacy & Security → Accessibility**
-(it is enabled on this machine; a **running iTerm must be restarted** to pick it
-up):
+Console build + package:
 
 ```bash
-osascript -e 'tell application "System Events" to key code 36'   # Return
+cmake -S . -B build-wiiu-net -DCMAKE_TOOLCHAIN_FILE=/opt/devkitpro/cmake/WiiU.cmake \
+  -DCMAKE_BUILD_TYPE=Release -DBUILD_NETWORK_HARNESS=ON -DBUILD_ASSETS_MPQ=OFF
+make -C build-wiiu-net network_peer -j8
+tools/wiiu/package-network-peer.sh       # elf2rpl + wuhbtool -> build-wiiu-net/network_peer.wuhb
 ```
+
+Then put `network_peer.ini` on the SD card
+(`sd:/wiiu/apps/devilutionx/network_peer.ini`) and launch the WUHB in Cemu:
+
+```ini
+role = join          # or host
+players = 2
+port = 6112
+connect = 127.0.0.1:6112
+password = secret    # omit or "-" for a public game
+rounds = 256
+scenario = wiiu-tcp
+deadline = 120
+```
+
+Results are JSONL on stdout/OSReport and in
+`sd:/wiiu/apps/devilutionx/network_peer_result.jsonl`. **Cemu needs SIGPIPE
+ignored** or it dies with signal 13 as soon as the guest writes to its socket:
+
+```bash
+python3 -c 'import os,signal,sys; signal.signal(signal.SIGPIPE, signal.SIG_IGN); os.execv("/Applications/Cemu.app/Contents/MacOS/Cemu", sys.argv[:1]+sys.argv[1:])' \
+  -g build-wiiu-net/network_peer.wuhb -m /Users/mario/work/wiiu/cemu-mlc
+```
+
+### Real game, manual UI (already confirmed working)
+
+Host on the Mac, join from Cemu:
+
+```bash
+cd /Users/mario/work/wiiu/DevilutionX
+
+open -n build-macos/devilutionx.app            # Multiplayer → TCP → Host Game
+tools/wiiu/cemu-run.sh build-wiiu-release/devilutionx.wuhb
+```
+
+In Cemu: Multiplayer → Client-Server (TCP) → Join Game → `127.0.0.1` is
+pre-filled → empty password → OK → pick the multiplayer hero. Both sides must
+be in the same game mode; the working setup is Diablo (full game) with
+`[GameMode] Game=2` and `[Mods] hf=0` on the console, and `Game=2` on the Mac.
+The hero archive `multi_0.sv` can be copied between the two: saves are packed
+little-endian.
+
+`tools/wiiu/cemu-run.sh` ignores SIGPIPE — Cemu 2.6.0 otherwise dies with
+signal 13 on the first multiplayer packet.
+
+### Cemu-only facts (not our code)
+
+1. **Cemu has no keyboard.** `nsyskbd.KBDSetup` is an unsupported lib call and
+   `nsyshid` emulates no USB keyboard, so SDL never gets a key event. On real
+   hardware a USB keyboard types straight into the game's own `UiEdit` (the PC
+   path in `keyboard.cpp`). The system swkbd is no alternative: Cemu's `swkbd`
+   HLE never hides on confirm and never clears its "OK pressed" flag, so SDL
+   re-sends the same string every frame (measured: 6931 events in ~15 s). See
+   finding 15 in `wiiu-progress.md`.
+2. **Wii U as host crashes Cemu on the self-connect.** The host path binds and
+   listens (verified by the raw-socket probe), then `tcp_client::create()`
+   connects to its own listener. In Cemu that is immediately followed by a
+   `SIGBUS` inside Cemu (guest stack: `tcp_client::poll` → `join` → `create`),
+   the same self-connect failure the earlier investigation hit. It is a Cemu
+   bug: raw `socket`/`bind`/`listen`/`connect`/`accept` all work on the guest.
+   Needs a real Wii U to validate hosting.
+3. **`getsockname()` lies in Cemu.** It reports success with an out-of-range
+   `socklen`, which makes asio's `endpoint::resize()` throw. Never call
+   `local_endpoint()` on the acceptor without a fallback (already handled in
+   `tcp_server::LocalhostSelf()`).
+4. **A stale Cemu holds `*:6112`.** `bind(0.0.0.0:6112)` then fails with
+   Cemu's own code `109999`. Kill leftover Cemu processes before hosting.
+
+### Driving Cemu's UI from a script does not work
+
+Synthetic events (`osascript ... key code`, System Events clicks) reach the
+native macOS build but **not** Cemu's guest, even with the GamePad keyboard
+mappings restored and `Pause Game When Window Loses Focus=0`. That is why the
+harness above exists; the real UI still needs a human (or a real keyboard on
+hardware).
+
+### State of the tree (uncommitted)
+
+- `Source/dvlnet/spawned_monster_delta.hpp` — new ABI-independent wire codec.
+- `Source/msg.cpp`, `Source/pack.cpp`, `Source/sync.cpp`,
+  `Source/dvlnet/base.cpp` — the BE/LE fixes from the shared-blockers list.
+- `Source/dvlnet/tcp_server.{h,cpp}`, `Source/dvlnet/tcp_client.{h,cpp}` —
+  per-socket write queues, non-throwing acceptor setup, port-aware
+  `LocalhostSelf()`, graceful-leave flush.
+- `Source/platform/wiiu/random.{hpp,cpp}` — libsodium RNG backend; wired into
+  `Source/main.cpp`, `Source/platform/wiiu/CMakeLists.txt` and `boot-diag.txt`.
+- `test/dvlnet_wire_test.cpp`, `test/network_peer.cpp`,
+  `test/run_network_scenario.py`, `CMake/NetworkHarness.cmake`,
+  `tools/wiiu/package-network-peer.sh` — the harness and tests.
+- `Source/platform/wiiu/keyboard.{cpp,hpp}`, `Source/DiabloUI/multi/selgame.cpp`
+  — the earlier PC-text-input / empty-password changes.
+- `Source/diablo.cpp`, `Source/menu.cpp` — the `skip-intro` dev marker.
+- Locally edited for tests: Cemu SD `network_peer.ini`; `diablo.ini`
+  (`Previous Host=127.0.0.1`, Intro off, pause off) and
+  `controllerProfiles/controller0.xml` for the manual UI path.
 
 ### Afterwards
 
@@ -390,10 +523,19 @@ There is **no `mods/` directory on the SD card** — the mod lives in the WUHB.
 | File | Role |
 |------|------|
 | `Source/platform/wiiu/init.cpp` | `wiiu_init()` — environment log + path setup + `boot-diag.txt` |
-| `Source/platform/wiiu/keyboard.cpp` | Text input, bypasses system swkbd |
+| `Source/platform/wiiu/keyboard.cpp` | Text input: enables SDL text events (no swkbd) |
+| `Source/platform/wiiu/random.cpp` | libsodium RNG backend (no OS RNG on the console) |
+| `Source/dvlnet/spawned_monster_delta.hpp` | ABI-independent delta wire codec (32-bit BE ↔ 64-bit LE) |
+| `Source/dvlnet/tcp_server.cpp` / `tcp_client.cpp` | TCP provider: per-socket write queues, port-aware self-connect |
+| `test/network_peer.cpp` | No-UI dvlnet TCP peer (host/join, turns, messages, socket probe) |
+| `test/run_network_scenario.py` | Orchestrates desktop ↔ desktop scenarios (players, password, drop, port) |
+| `test/dvlnet_wire_test.cpp` | Golden packet/frame vectors, encryption, spawned-monster codec |
+| `CMake/NetworkHarness.cmake` | `BUILD_NETWORK_HARNESS=ON` target (independent of `BUILD_TESTING`) |
+| `tools/wiiu/package-network-peer.sh` | Packages the harness as a standalone WUHB |
+| `tools/wiiu/cemu-run.sh` | Launches Cemu with SIGPIPE ignored (multiplayer needs it) |
 | `Source/utils/paths.cpp` | Base/assets/pref path resolution (SDL) |
 | `Source/main.cpp` | Calls `wiiu_init()` |
-| `CMake/platforms/wiiu.cmake` | Platform build config (`NONET=ON`, sound on) |
+| `CMake/platforms/wiiu.cmake` | Platform build config (`NONET=OFF`, ZeroTier off, sound on) |
 | `3rdParty/Lua/CMakeLists.txt` | `WIIU` in the `LUA_USE_C89` list |
 | `tools/wiiu/wiiu-run.sh` | Build → package → run → log |
 | `tools/wiiu/package-wuhb.sh` | Packages the self-contained Aroma-layout WUHB (assets + `mods/hf.mpq`) |

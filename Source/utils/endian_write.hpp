@@ -19,4 +19,10 @@ inline void WriteLE32(void *out, uint32_t val)
 	memcpy(out, &littleEndian, 4);
 }
 
+inline void WriteLE64(void *out, uint64_t val)
+{
+	const uint64_t littleEndian = Swap64LE(val);
+	memcpy(out, &littleEndian, 8);
+}
+
 } // namespace devilution

@@ -30,6 +30,9 @@
  */
 #include "platform/wiiu/init.hpp"
 #include "platform/wiiu/network.hpp"
+#ifdef PACKET_ENCRYPTION
+#include "platform/wiiu/random.hpp"
+#endif
 
 #include <cerrno>
 #include <cstdarg>
@@ -437,6 +440,26 @@ void ProbeNetworking()
 	close(cli);
 	close(srv);
 
+	// --- Phase 4: reach the game server (dvlnet listens on 6112) ---
+	// Run a native build as host and this tells us, before any UI exists,
+	// whether the guest can actually connect to it.
+	rc = socket(AF_INET, SOCK_STREAM, 0);
+	ProbeStep("socket(server)", rc);
+	const int srvCli = rc;
+	if (srvCli >= 0) {
+		sockaddr_in server {};
+		server.sin_family = AF_INET;
+		server.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		server.sin_port = htons(6112);
+		rc = connect(srvCli, reinterpret_cast<sockaddr *>(&server), sizeof(server));
+		ProbeStep("connect(127.0.0.1:6112)", rc);
+		if (rc == 0) {
+			rc = static_cast<int>(send(srvCli, "dvlnet-probe", 12, 0));
+			ProbeStep("send(server)", rc);
+		}
+		close(srvCli);
+	}
+
 	Diag("=== network probe done ===");
 	DiagFlushToSd();
 }
@@ -453,6 +476,9 @@ void wiiu_init()
 #ifndef NONET
 	wiiu_enable_network();
 	Diag("network: wiiu_enable_network() done");
+#endif
+#ifdef PACKET_ENCRYPTION
+	Diag("random: %s", wiiu_random_source());
 #endif
 	ProbeNetworking();
 #ifndef NONET

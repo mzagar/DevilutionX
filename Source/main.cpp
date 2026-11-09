@@ -7,6 +7,9 @@
 
 #ifdef __WIIU__
 #include "platform/wiiu/init.hpp"
+#ifdef PACKET_ENCRYPTION
+#include "platform/wiiu/random.hpp"
+#endif
 #endif
 #ifdef __SWITCH__
 #include "platform/switch/network.h"
@@ -39,6 +42,11 @@ extern "C" const char *__asan_default_options() // NOLINT(bugprone-reserved-iden
 extern "C" int main(int argc, char **argv)
 {
 #ifdef __WIIU__
+#ifdef PACKET_ENCRYPTION
+	// libsodium's default backend aborts when /dev/urandom is missing, which is
+	// the first thing that happens on a TCP join. See platform/wiiu/random.cpp.
+	randombytes_wiiurandom_init();
+#endif
 	wiiu_init();
 #endif
 #ifdef __SWITCH__

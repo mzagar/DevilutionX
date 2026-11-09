@@ -18,6 +18,7 @@ set(tests
   cursor_test
   dead_test
   diablo_test
+  dvlnet_wire_test
   drlg_common_test
   drlg_l1_test
   drlg_l2_test
