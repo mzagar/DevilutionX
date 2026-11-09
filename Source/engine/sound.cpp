@@ -28,6 +28,7 @@
 
 #include "appfat.h"
 #include "engine/assets.hpp"
+#include "engine/fbbsanitizer.hpp"
 #include "game_mode.hpp"
 #include "options.h"
 #include "utils/log.hpp"
@@ -80,6 +81,8 @@ std::expected<void, std::string> LoadAudioFile(const char *path, bool stream, So
 	SND_DBG("FindAsset mp3 '%s'", foundPath.c_str());
 	AssetRef ref = FindAsset(foundPath.c_str());
 	if (!ref.ok()) {
+		if (IsFbbAsset(path))
+			SanitizeFbbAsset();
 		SND_DBG("mp3 not found, trying '%s'", path);
 		ref = FindAsset(path);
 		foundPath = path;

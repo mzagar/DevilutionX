@@ -229,7 +229,8 @@ AssetRef FindAsset(std::string_view filename)
 	// Fall back to the bundled assets on supported systems.
 	// This is handled by SDL when we pass a relative path.
 	if (!paths::AssetsPath().empty()) {
-		result.directHandle = SDL_IOFromFile(relativePath.c_str(), "rb");
+		std::string assetPath = "assets/" + relativePath;
+		result.directHandle = SDL_IOFromFile(assetPath.c_str(), "rb");
 		if (result.directHandle != nullptr)
 			return result;
 	}
@@ -412,13 +413,18 @@ bool LoadMPQ(std::span<const std::string> paths, std::string_view mpqName, int p
 	std::string mpqAbsPath;
 	bool foundButFailed = false;
 	for (const auto &path : paths) {
+		bool openWithSDL = path.starts_with("sdl:/");
 		mpqAbsPath = StrCat(path, mpqName, ext);
-		if (!FileExists(mpqAbsPath))
+		if (!openWithSDL && !FileExists(mpqAbsPath))
 			continue;
-		std::expected<MpqArchive, std::string> archive = MpqArchive::Open(mpqAbsPath.c_str());
+		std::expected<MpqArchive, std::string> archive = openWithSDL
+		    ? MpqArchive::OpenWithSDL(mpqAbsPath.c_str() + 5)
+		    : MpqArchive::Open(mpqAbsPath.c_str());
 		if (!archive.has_value()) {
-			foundButFailed = true;
-			LogError("Error {}: {}", archive.error(), mpqAbsPath);
+			if (!openWithSDL) {
+				foundButFailed = true;
+				LogError("Error {}: {}", archive.error(), mpqAbsPath);
+			}
 			continue;
 		}
 		LogVerbose("  Found: {} in {}", mpqName, path);
@@ -471,6 +477,8 @@ std::vector<std::string> GetMPQSearchPaths()
 #else
 	paths.emplace_back("/usr/share/diasurgical/devilutionx/");
 #endif
+#elif defined(__3DS__) || defined(__SWITCH__)
+	paths.emplace_back("romfs:/");
 #elif defined(NXDK)
 	paths.emplace_back("D:\\");
 #elif defined(_WIN32) && !defined(__UWP__) && !defined(DEVILUTIONX_WINDOWS_NO_WCHAR)
@@ -627,10 +635,13 @@ std::expected<ModManifest, int32_t> ReadPackedModManifest(std::span<const std::s
 	const std::string mpqName = StrCat("mods" DIRECTORY_SEPARATOR_STR, modname);
 	std::string mpqAbsPath;
 	for (const std::string &path : paths) {
+		bool openWithSDL = path.starts_with("sdl:/");
 		mpqAbsPath = StrCat(path, mpqName, ".mpq");
-		if (!FileExists(mpqAbsPath))
+		if (!openWithSDL && !FileExists(mpqAbsPath))
 			continue;
-		std::expected<MpqArchive, std::string> archive = MpqArchive::Open(mpqAbsPath.c_str());
+		std::expected<MpqArchive, std::string> archive = openWithSDL
+		    ? MpqArchive::OpenWithSDL(mpqAbsPath.c_str() + 5)
+		    : MpqArchive::Open(mpqAbsPath.c_str());
 		if (!archive.has_value())
 			return std::unexpected(0);
 		return ReadPackedModManifestFrom(*archive);
@@ -670,11 +681,16 @@ std::vector<std::string> ReadPackedModRequiredMods(std::span<const std::string> 
 
 ModManifest ReadModManifestByName(std::string_view name)
 {
-	const std::vector<std::string> searchPaths = GetMPQSearchPaths();
 	constexpr std::string_view ManifestName = "manifest.ini";
 
+	// Matches the OverridePaths registered per mod by LoadModArchives()
+	const std::array<std::string, 2> unpackedSearchPaths {
+		paths::PrefPath(),
+		paths::BasePath(),
+	};
+
 	// Loose mod directory (also how UNPACKED_MPQS builds ship their mods).
-	for (const std::string &path : searchPaths) {
+	for (const std::string &path : unpackedSearchPaths) {
 		const std::string manifestPath = StrCat(path, "mods" DIRECTORY_SEPARATOR_STR, name, DIRECTORY_SEPARATOR_STR, ManifestName);
 		FILE *file = OpenFile(manifestPath.c_str(), "rb");
 		if (file == nullptr)
@@ -693,7 +709,11 @@ ModManifest ReadModManifestByName(std::string_view name)
 
 #ifndef UNPACKED_MPQS
 	// Packed mod archive.
-	std::expected<ModManifest, int32_t> manifest = ReadPackedModManifest(searchPaths, name);
+	std::vector<std::string> packedSearchPaths = GetMPQSearchPaths();
+#if (defined(__ANDROID__) && !defined(TERMUX)) || defined(__APPLE__)
+	packedSearchPaths.emplace_back("sdl:/");
+#endif
+	std::expected<ModManifest, int32_t> manifest = ReadPackedModManifest(packedSearchPaths, name);
 	if (manifest.has_value())
 		return std::move(*manifest);
 #endif
@@ -747,6 +767,9 @@ void LoadModArchives(std::span<const std::string_view> modnames)
 
 	int priority = 10000;
 	auto paths = GetMPQSearchPaths();
+#if (defined(__ANDROID__) && !defined(TERMUX)) || defined(__APPLE__)
+	paths.emplace_back("sdl:/");
+#endif
 	for (size_t i = 0; i < activeMods.size(); ++i) {
 		const std::string_view modname = activeMods[i];
 		const std::string mpqName = StrCat("mods" DIRECTORY_SEPARATOR_STR, modname);
@@ -757,7 +780,8 @@ void LoadModArchives(std::span<const std::string_view> modnames)
 		if (LoadMPQ(paths, mpqName, priority, ".mpq", &loadedPath)) {
 			// A packed mod: identify it by the hash of its MPQ bytes. A local packed mod
 			// deliberately shadows any built-in of the same name, so it is treated as external.
-			ModIdentifier &mod = RegisterPackedModIdentifier(modname, loadedPath.c_str());
+			size_t offset = loadedPath.starts_with("sdl:/") ? 5 : 0;
+			ModIdentifier &mod = RegisterPackedModIdentifier(modname, loadedPath.c_str() + offset);
 			ReadLoadedModManifest(mod, priority);
 		} else if (!hasLooseOverride[i]) {
 			// Neither a packed MPQ nor a loose override directory: this mod resolves purely

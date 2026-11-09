@@ -478,3 +478,4 @@ uwp-project/Assets/ui_art
 /gog-mpq/
 /compile_commands.json
 /tools/tmp
+*.bak

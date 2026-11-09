@@ -118,6 +118,7 @@ set(libdevilutionx_SRCS
   lua/modules/render.cpp
   lua/modules/system.cpp
   lua/modules/towners.cpp
+  lua/modules/towns.cpp
   lua/repl.cpp
 
   monsters/validation.cpp
@@ -198,6 +199,7 @@ target_link_dependencies(libdevilutionx_mod_identity PUBLIC
 
 add_devilutionx_object_library(libdevilutionx_assets
   engine/assets.cpp
+  engine/fbbsanitizer.cpp
 )
 target_link_dependencies(libdevilutionx_assets PUBLIC
   DevilutionX::SDL
@@ -396,6 +398,13 @@ target_link_dependencies(libdevilutionx_game_mode PRIVATE
   libdevilutionx_options
 )
 
+add_devilutionx_object_library(libdevilutionx_town_data
+  levels/town_data.cpp
+)
+target_link_dependencies(libdevilutionx_town_data PUBLIC
+  libdevilutionx_log
+)
+
 add_devilutionx_object_library(libdevilutionx_dun_tile_data
   levels/dun_tile_data.cpp
   levels/reencode_dun_cels.cpp
@@ -404,6 +413,7 @@ target_link_dependencies(libdevilutionx_dun_tile_data PUBLIC
   tl
   unordered_dense::unordered_dense
   libdevilutionx_assets
+  libdevilutionx_town_data
   PRIVATE
   libdevilutionx_format_int
   libdevilutionx_sdl2_to_1_2_backports
@@ -608,6 +618,7 @@ target_sources(libdevilutionx_log INTERFACE $<TARGET_OBJECTS:libdevilutionx_stri
 
 add_devilutionx_object_library(libdevilutionx_level_objects
   tables/objdat.cpp
+  tables/shrinedat.cpp
   objects.cpp
 )
 target_link_dependencies(libdevilutionx_level_objects PUBLIC
@@ -666,6 +677,7 @@ if(SUPPORTS_MPQ)
   add_devilutionx_object_library(libdevilutionx_mpq
     mpq/mpq_common.cpp
     mpq/mpq_reader.cpp
+    mpq/mpq_sdl_ds.cpp
     mpq/mpq_sdl_rwops.cpp
     mpq/mpq_writer.cpp
   )
@@ -1024,9 +1036,14 @@ if(SCREEN_READER_INTEGRATION)
   )
 endif()
 
-if(DEVILUTIONX_SCREENSHOT_FORMAT STREQUAL DEVILUTIONX_SCREENSHOT_FORMAT_PCX)
-  list(APPEND libdevilutionx_SRCS
+if(DEVILUTIONX_SCREENSHOT_FORMAT STREQUAL DEVILUTIONX_SCREENSHOT_FORMAT_PCX OR BUILD_TESTING)
+  add_devilutionx_object_library(libdevilutionx_surface_to_pcx
     utils/surface_to_pcx.cpp
+  )
+  target_link_dependencies(libdevilutionx_surface_to_pcx
+    PUBLIC
+    DevilutionX::SDL
+    libdevilutionx_surface
   )
 endif()
 
@@ -1114,6 +1131,8 @@ target_link_dependencies(libdevilutionx PUBLIC
 )
 if(DEVILUTIONX_SCREENSHOT_FORMAT STREQUAL DEVILUTIONX_SCREENSHOT_FORMAT_PNG)
   target_link_dependencies(libdevilutionx PUBLIC libdevilutionx_surface_to_png)
+elseif(DEVILUTIONX_SCREENSHOT_FORMAT STREQUAL DEVILUTIONX_SCREENSHOT_FORMAT_PCX)
+  target_link_dependencies(libdevilutionx PUBLIC libdevilutionx_surface_to_pcx)
 endif()
 
 # Use file GENERATE instead of configure_file because configure_file
