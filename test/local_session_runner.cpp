@@ -21,6 +21,7 @@
 #include <cstring>
 #include <filesystem>
 #include <format>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -30,6 +31,7 @@
 #include <SDL.h>
 #endif
 
+#include "DiabloUI/diabloui.h"
 #include "diablo.h"
 #include "engine/assets.hpp"
 #include "game_mode.hpp"
@@ -58,6 +60,12 @@
 #include "utils/paths.h"
 #include "utils/str_cat.hpp"
 
+#ifdef __WIIU__
+#include <sys/stat.h>
+
+#include "platform/wiiu/init.hpp"
+#endif
+
 using namespace devilution;
 
 namespace {
@@ -66,6 +74,7 @@ struct RunnerOptions {
 	std::string dataDir;
 	std::string prefDir;
 	std::string resultPath;
+	std::string createHero;
 	uint32_t hero = 0;
 	int ticks = 50;
 	int walkTiles = 0;
@@ -110,6 +119,7 @@ void PrintHelp()
 	    "  --pref-dir <dir>   save/config directory (required; must contain the hero save)\n"
 	    "  --result <path>    also write JSONL here (default: <pref-dir>/local_session_result.jsonl)\n"
 	    "  --hero <n>         hero save number (default: 0)\n"
+	    "  --create-hero <c>  create a disposable hero first (warrior|rogue|sorcerer|monk)\n"
 	    "  --ticks <n>        logic ticks to run (default: 50)\n"
 	    "  --walk <n>         ask the hero to walk n tiles east before ticking (default: 0)\n"
 	    "  --checkpoint <n>   emit a checkpoint every n ticks (default: ticks/4)\n"
@@ -143,6 +153,10 @@ bool ParseArgs(int argc, char **argv, RunnerOptions &out)
 			const char *value = needValue(arg);
 			if (value == nullptr) return false;
 			out.resultPath = value;
+		} else if (arg == "--create-hero") {
+			const char *value = needValue(arg);
+			if (value == nullptr) return false;
+			out.createHero = value;
 		} else if (arg == "--hero") {
 			const char *value = needValue(arg);
 			if (value == nullptr) return false;
@@ -164,10 +178,12 @@ bool ParseArgs(int argc, char **argv, RunnerOptions &out)
 			return false;
 		}
 	}
+#ifndef __WIIU__
 	if (!out.showHelp && out.prefDir.empty()) {
 		std::fprintf(stderr, "--pref-dir is required\n");
 		return false;
 	}
+#endif
 	if (out.ticks <= 0) {
 		std::fprintf(stderr, "--ticks must be positive\n");
 		return false;
@@ -205,6 +221,31 @@ void EmitCheckpoint(int tick)
 	Emit("CHECKPOINT", StrCat("\"tick\":", tick, ",", DescribePlayer(), ",", DescribeWorld()));
 }
 
+std::optional<HeroClass> ParseHeroClass(std::string_view name)
+{
+	if (name == "warrior") return HeroClass::Warrior;
+	if (name == "rogue") return HeroClass::Rogue;
+	if (name == "sorcerer") return HeroClass::Sorcerer;
+	if (name == "monk") return HeroClass::Monk;
+	return std::nullopt;
+}
+
+/// Creates a disposable hero through the production save writer, so the runner
+/// never depends on saves produced by the UI (or on the user's own saves).
+bool CreateDisposableHero(HeroClass heroClass, uint32_t saveNumber)
+{
+	Players.resize(1);
+	_uiheroinfo heroInfo {};
+	heroInfo.saveNumber = saveNumber;
+	CopyUtf8(heroInfo.name, "Runner", sizeof(heroInfo.name));
+	heroInfo.heroclass = heroClass;
+	heroInfo.level = 1;
+	heroInfo.hassaved = false;
+	heroInfo.spawned = gbIsSpawn;
+	giNumberOfLevels = gbIsHellfire ? 25 : 17;
+	return pfile_ui_save_create(&heroInfo);
+}
+
 } // namespace
 
 int main(int argc, char **argv)
@@ -219,12 +260,23 @@ int main(int argc, char **argv)
 		return 0;
 	}
 
+#ifdef __WIIU__
+	wiiu_init();
+	if (opts.prefDir.empty()) {
+		// Keep runner saves away from the player's own characters.
+		opts.prefDir = StrCat(paths::PrefPath(), "runner");
+	}
+	if (opts.createHero.empty())
+		opts.createHero = "warrior";
+	::mkdir(opts.prefDir.c_str(), 0777);
+#else
 	std::error_code ec;
 	std::filesystem::create_directories(opts.prefDir, ec);
 	if (ec) {
 		std::fprintf(stderr, "cannot create %s: %s\n", opts.prefDir.c_str(), ec.message().c_str());
 		return 2;
 	}
+#endif
 
 	if (opts.resultPath.empty())
 		opts.resultPath = opts.prefDir + "/local_session_result.jsonl";
@@ -275,12 +327,23 @@ int main(int argc, char **argv)
 	forceResolution = Size { 640, 480 };
 	AdjustToScreenGeometry(forceResolution);
 
+	bool heroCreated = false;
+	if (!opts.createHero.empty()) {
+		const std::optional<HeroClass> heroClass = ParseHeroClass(opts.createHero);
+		if (!heroClass.has_value())
+			return Fail(StrCat("unknown hero class: ", opts.createHero));
+		heroCreated = CreateDisposableHero(*heroClass, opts.hero);
+		if (!heroCreated)
+			return Fail("could not create the disposable hero");
+	}
+
 	gbLoadGame = false;
 	gSaveNumber = opts.hero;
 
 	Emit("SESSION", StrCat(
 	                  "\"hero\":", opts.hero,
 	                  ",\"spawn\":", archivesSpawn ? "true" : "false",
+	                  ",\"createdHero\":", heroCreated ? "true" : "false",
 	                  ",\"hellfire\":false,\"ticks\":", opts.ticks,
 	                  ",\"screen\":\"640x480\""));
 

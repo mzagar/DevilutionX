@@ -340,9 +340,7 @@ void LoadModArchives(std::span<const std::string_view> modnames);
  */
 [[nodiscard]] ModManifest ReadModManifestByName(std::string_view name);
 
-#ifdef BUILD_TESTING
 [[nodiscard]] inline bool HaveMainData() { return MpqArchives.find(MainMpqPriority) != MpqArchives.end(); }
-#endif
 [[nodiscard]] inline bool HaveExtraFonts() { return MpqArchives.find(FontMpqPriority) != MpqArchives.end(); }
 [[nodiscard]] inline bool HaveHellfire() { return HasHellfireMpq; }
 [[nodiscard]] inline bool HaveIntro() { return FindAsset("gendata\\diablo1.smk").ok(); }
