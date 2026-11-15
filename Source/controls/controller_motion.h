@@ -8,6 +8,8 @@
 #include <SDL.h>
 #endif
 
+#include <cstdint>
+
 #include "controls/axis_direction.h"
 #include "controls/controller.h"
 
@@ -36,6 +38,10 @@ bool IsControllerMotion(const SDL_Event &event);
 
 // Returns direction of the left thumb stick or DPad (if allow_dpad = true).
 AxisDirection GetLeftStickOrDpadDirection(bool usePadmapper);
+
+// Seat-scoped variant: uses that seat's own sticks and DPad. Seat 0 keeps the
+// existing mouse/padmapper/virtual-gamepad behaviour.
+AxisDirection GetLeftStickOrDpadDirectionForSeat(uint8_t seat, bool usePadmapper);
 
 // Simulates right-stick movement based on input from padmapper mouse movement actions.
 void SimulateRightStickWithPadmapper(ControllerButtonEvent ctrlEvent);

@@ -68,5 +68,24 @@ TEST_F(SeatInputTest, IgnoresInvalidSeatAndPlaceholderButtons)
 	EXPECT_FALSE(input.IsPressed(0, ControllerButton_NONE));
 }
 
+TEST_F(SeatInputTest, AxesAreTrackedPerSeat)
+{
+	SeatInput &input = SeatInput::Instance();
+	input.OnAxis(0, SeatInput::SeatAxisLeftX, 1000);
+	input.OnAxis(1, SeatInput::SeatAxisLeftX, -1000);
+
+	EXPECT_FLOAT_EQ(input.Axis(0, SeatInput::SeatAxisLeftX), 1000);
+	EXPECT_FLOAT_EQ(input.Axis(1, SeatInput::SeatAxisLeftX), -1000);
+	EXPECT_FLOAT_EQ(input.Axis(0, SeatInput::SeatAxisLeftY), 0);
+}
+
+TEST_F(SeatInputTest, ResetClearsAxesToo)
+{
+	SeatInput &input = SeatInput::Instance();
+	input.OnAxis(0, SeatInput::SeatAxisRightY, 500);
+	input.Reset(0);
+	EXPECT_FLOAT_EQ(input.Axis(0, SeatInput::SeatAxisRightY), 0);
+}
+
 } // namespace
 } // namespace devilution

@@ -12,6 +12,8 @@
 #include "control/control.hpp"
 #include "controls/control_mode.hpp"
 #include "controls/controller.h"
+#include "controls/input_seats.hpp"
+#include "controls/seat_input.h"
 #ifndef USE_SDL1
 #include "controls/devices/game_controller.h"
 #endif
@@ -189,9 +191,77 @@ bool IsControllerMotion(const SDL_Event &event)
 	return false;
 }
 
+namespace {
+
+void StoreSeatAxes(const SDL_Event &event)
+{
+#ifndef USE_SDL1
+	if (event.type == SDL_EVENT_GAMEPAD_AXIS_MOTION) {
+		const GameController *controller = GameController::Get(event);
+		if (controller == nullptr)
+			return;
+		const uint8_t seat = InputSeats::Instance().SeatFor(static_cast<uint32_t>(controller->instance_id()));
+		const SDL_GamepadAxisEvent &axis = SDLC_EventGamepadAxis(event);
+		switch (axis.axis) {
+		case SDL_GAMEPAD_AXIS_LEFTX:
+			SeatInput::Instance().OnAxis(seat, SeatInput::SeatAxisLeftX, static_cast<float>(axis.value));
+			return;
+		case SDL_GAMEPAD_AXIS_LEFTY:
+			SeatInput::Instance().OnAxis(seat, SeatInput::SeatAxisLeftY, static_cast<float>(-axis.value));
+			return;
+		case SDL_GAMEPAD_AXIS_RIGHTX:
+			SeatInput::Instance().OnAxis(seat, SeatInput::SeatAxisRightX, static_cast<float>(axis.value));
+			return;
+		case SDL_GAMEPAD_AXIS_RIGHTY:
+			SeatInput::Instance().OnAxis(seat, SeatInput::SeatAxisRightY, static_cast<float>(-axis.value));
+			return;
+		default:
+			return;
+		}
+	}
+#endif
+	if (event.type == SDL_EVENT_JOYSTICK_AXIS_MOTION) {
+		const Joystick *joystick = Joystick::Get(event);
+		if (joystick == nullptr)
+			return;
+		const uint8_t seat = InputSeats::Instance().SeatFor(static_cast<uint32_t>(joystick->instance_id()));
+#if defined(JOY_AXIS_LEFTX) || defined(JOY_AXIS_LEFTY) || defined(JOY_AXIS_RIGHTX) || defined(JOY_AXIS_RIGHTY)
+		switch (event.jaxis.axis) {
+#ifdef JOY_AXIS_LEFTX
+		case JOY_AXIS_LEFTX:
+			SeatInput::Instance().OnAxis(seat, SeatInput::SeatAxisLeftX, event.jaxis.value);
+			return;
+#endif
+#ifdef JOY_AXIS_LEFTY
+		case JOY_AXIS_LEFTY:
+			SeatInput::Instance().OnAxis(seat, SeatInput::SeatAxisLeftY, -event.jaxis.value);
+			return;
+#endif
+#ifdef JOY_AXIS_RIGHTX
+		case JOY_AXIS_RIGHTX:
+			SeatInput::Instance().OnAxis(seat, SeatInput::SeatAxisRightX, event.jaxis.value);
+			return;
+#endif
+#ifdef JOY_AXIS_RIGHTY
+		case JOY_AXIS_RIGHTY:
+			SeatInput::Instance().OnAxis(seat, SeatInput::SeatAxisRightY, -event.jaxis.value);
+			return;
+#endif
+		default:
+			return;
+		}
+#else
+		(void)seat;
+#endif
+	}
+}
+
+} // namespace
+
 // Updates motion state for mouse and joystick sticks.
 void ProcessControllerMotion(const SDL_Event &event)
 {
+	StoreSeatAxes(event);
 #ifndef USE_SDL1
 	GameController *const controller = GameController::Get(event);
 	if (controller != nullptr && devilution::GameController::ProcessAxisMotion(event)) {
@@ -282,6 +352,29 @@ AxisDirection GetLeftStickOrDpadDirection(bool usePadmapper)
 	} else if (isRightPressed) {
 		result.x = AxisDirectionX_RIGHT;
 	}
+
+	return result;
+}
+
+AxisDirection GetLeftStickOrDpadDirectionForSeat(uint8_t seat, bool usePadmapper)
+{
+	if (seat == 0)
+		return GetLeftStickOrDpadDirection(usePadmapper);
+
+	float x = SeatInput::Instance().Axis(seat, SeatInput::SeatAxisLeftX);
+	float y = SeatInput::Instance().Axis(seat, SeatInput::SeatAxisLeftY);
+	ScaleJoystickAxes(&x, &y, GetOptions().Controller.fDeadzone);
+	AxisDirection result = GetAnalogStickDirection(x, y);
+
+	if (IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_DPAD_UP))
+		result.y = AxisDirectionY_UP;
+	else if (IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_DPAD_DOWN))
+		result.y = AxisDirectionY_DOWN;
+
+	if (IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_DPAD_LEFT))
+		result.x = AxisDirectionX_LEFT;
+	else if (IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_DPAD_RIGHT))
+		result.x = AxisDirectionX_RIGHT;
 
 	return result;
 }
