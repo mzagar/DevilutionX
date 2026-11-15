@@ -339,6 +339,54 @@ ZeroTier still works at the network level today:
 The only thing lost is game discovery: the TCP provider has no gamelist, so the
 address must be entered (or taken from `[Network] Previous Host`).
 
+#### Setup for two households
+
+This is the whole recipe for a game between two homes. The free ZeroTier plan
+is enough for a handful of players.
+
+1. **Create the network.** Sign in at <https://my.zerotier.com>, create a
+   network and copy its **Network ID** (16 hex characters). Leave the access
+   control on "private" and authorise devices as they appear.
+2. **Join both machines.** Install ZeroTier One on the host machine and on the
+   other player's machine:
+
+   ```bash
+   sudo zerotier-cli join <NetworkID>
+   zerotier-cli listnetworks     # wait for OK and note the 10.147.17.x address
+   ```
+
+   In the web UI, tick both devices. Each one gets a managed `10.147.17.x`
+   address.
+3. **Pick the game mode.**
+   - *Desktop build with the ZeroTier provider:* Multiplayer → ZeroTier →
+     enter the network name/ID. The game list then shows hosted games by name.
+   - *Wii U (or any build without the provider):* host over **TCP** on the
+     machine that runs ZeroTier, and join the host's `10.147.17.x:6112`.
+4. **Cemu:** nothing else is needed. `nsysnet` bridges the guest sockets to the
+   host network stack, so the join dialog accepts the `10.147.17.x` address.
+5. **Real Wii U:** the console has no ZeroTier client. Run ZeroTier on the LAN
+   gateway (a router that supports it, or a PC/Mac that routes
+   `10.147.17.0/24`), then enter the host's `10.147.17.x` on the console.
+   Without that route the console cannot reach the virtual network.
+
+Quick checks before starting a game:
+
+```bash
+ping -c 3 10.147.17.x              # virtual network reachable?
+nc -vz 10.147.17.x 6112            # host listener reachable?
+zerotier-cli peers                 # DIRECT (not RELAY) is better for latency
+```
+
+Notes:
+
+- No port forwarding is needed; do not expose 6112 on the router.
+- TCP has no discovery, so the address must be typed or come from
+  `[Network] Previous Host`.
+- If `zerotier-cli peers` shows `RELAY`, the game still works but adds latency;
+  direct paths usually establish after a few seconds.
+- The free plan has a device limit that changes over time; check the current
+  terms before inviting a larger group.
+
 ### How to run a real session without the UI
 
 The harness drives the same SNet/dvlnet code as the game but skips menus,
