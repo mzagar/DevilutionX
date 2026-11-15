@@ -35,6 +35,7 @@ set(tests
   drlg_l3_test
   drlg_l4_test
   effects_test
+  game_controls_test
   inv_test
   items_test
   math_test
@@ -45,6 +46,7 @@ set(tests
   quests_test
   reencode_dun_cels_test
   scrollrt_test
+  shrines_test
   stores_test
   tile_properties_test
   timedemo_test
