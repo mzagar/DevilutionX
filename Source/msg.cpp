@@ -1265,7 +1265,7 @@ bool IsPItemValid(const TCmdPItem &message, const Player &player)
 
 	if (idx != IDI_EAR) {
 		const uint16_t creationFlags = Swap16LE(message.item.wCI);
-		const uint32_t dwBuff = Swap16LE(message.item.dwBuff);
+		const uint32_t dwBuff = ReadNetworkItemFlags(message.item);
 
 		if (idx != IDI_GOLD)
 			ValidateField(creationFlags, IsCreationFlagComboValid(creationFlags));

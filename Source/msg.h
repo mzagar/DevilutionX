@@ -14,6 +14,7 @@
 #include "objects.h"
 #include "portal.h"
 #include "quests.h"
+#include "utils/endian_read.hpp"
 
 namespace devilution {
 
@@ -558,6 +559,18 @@ struct TEar {
 	uint8_t bCursval;
 	char heroname[17];
 };
+
+/**
+ * @brief Decodes the 32-bit item flags field from its little-endian wire representation.
+ *
+ * The field is written with Swap32LE (see PrepareItemForNetwork). Decoding it with a
+ * 16-bit swap silently truncates the high half on big-endian targets such as the Wii U.
+ */
+template <typename T>
+constexpr uint32_t ReadNetworkItemFlags(const T &wireItem)
+{
+	return LoadLE32(reinterpret_cast<const uint8_t *>(&wireItem.dwBuff));
+}
 
 /**
  * Represents an item being picked up from the ground

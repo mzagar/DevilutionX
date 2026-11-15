@@ -62,6 +62,7 @@ set(tests
   spell_ui_test
   char_panel_test
   game_menu_test
+  item_flags_wire_test
 )
 set(standalone_tests
   cl2_to_clx_test
