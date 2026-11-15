@@ -36,6 +36,7 @@ public:
 	ControllerButton ToControllerButton(const SDL_Event &event);
 
 	bool IsPressed(ControllerButton button) const;
+	[[nodiscard]] SDL_JoystickID instance_id() const { return instance_id_; }
 	static bool ProcessAxisMotion(const SDL_Event &event);
 
 #ifdef USE_SDL3

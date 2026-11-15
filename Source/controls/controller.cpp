@@ -13,6 +13,8 @@
 #endif
 #include "controls/devices/joystick.h"
 #include "controls/devices/kbcontroller.h"
+#include "controls/input_seats.hpp"
+#include "controls/seat_input.h"
 #include "engine/demomode.h"
 #include "utils/sdl_compat.h"
 
@@ -32,7 +34,9 @@ void UnlockControllerState(const SDL_Event &event)
 	}
 }
 
-StaticVector<ControllerButtonEvent, 4> ToControllerButtonEvents(const SDL_Event &event)
+namespace {
+
+StaticVector<ControllerButtonEvent, 4> ToControllerButtonEventsImpl(const SDL_Event &event)
 {
 	ControllerButtonEvent result { ControllerButton_NONE, false };
 	switch (event.type) {
@@ -72,6 +76,38 @@ StaticVector<ControllerButtonEvent, 4> ToControllerButtonEvents(const SDL_Event 
 	}
 
 	return { result };
+}
+
+uint8_t SeatForControllerEvent(const SDL_Event &event)
+{
+#ifndef USE_SDL1
+	if (const GameController *controller = GameController::Get(event); controller != nullptr)
+		return InputSeats::Instance().SeatFor(static_cast<uint32_t>(controller->instance_id()));
+#endif
+	if (const Joystick *joystick = Joystick::Get(event); joystick != nullptr)
+		return InputSeats::Instance().SeatFor(static_cast<uint32_t>(joystick->instance_id()));
+	return 0; // Keyboard and virtual-pad input belong to the first seat.
+}
+
+} // namespace
+
+StaticVector<ControllerButtonEvent, 4> ToControllerButtonEvents(const SDL_Event &event)
+{
+	StaticVector<ControllerButtonEvent, 4> events = ToControllerButtonEventsImpl(event);
+	const uint8_t seat = SeatForControllerEvent(event);
+	for (const ControllerButtonEvent &ctrlEvent : events)
+		SeatInput::Instance().OnButton(seat, ctrlEvent.button, ctrlEvent.up);
+	return events;
+}
+
+bool IsControllerButtonPressedOnSeat(uint8_t seat, ControllerButton button)
+{
+	return SeatInput::Instance().IsPressed(seat, button);
+}
+
+bool IsControllerButtonComboPressedOnSeat(uint8_t seat, ControllerButtonCombo combo)
+{
+	return SeatInput::Instance().IsComboPressed(seat, combo);
 }
 
 bool IsControllerButtonPressed(ControllerButton button)

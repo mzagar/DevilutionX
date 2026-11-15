@@ -6,6 +6,8 @@
 #include <SDL.h>
 #endif
 
+#include <cstdint>
+
 #include "controller_buttons.h"
 #include "utils/static_vector.hpp"
 
@@ -18,6 +20,10 @@ StaticVector<ControllerButtonEvent, 4> ToControllerButtonEvents(const SDL_Event 
 
 bool IsControllerButtonPressed(ControllerButton button);
 bool IsControllerButtonComboPressed(ControllerButtonCombo combo);
+
+// Seat-scoped variants: both the button and the modifier must belong to the same seat.
+bool IsControllerButtonPressedOnSeat(uint8_t seat, ControllerButton button);
+bool IsControllerButtonComboPressedOnSeat(uint8_t seat, ControllerButtonCombo combo);
 
 bool HandleControllerAddedOrRemovedEvent(const SDL_Event &event);
 

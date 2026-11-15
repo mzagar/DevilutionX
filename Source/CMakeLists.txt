@@ -38,6 +38,7 @@ set(libdevilutionx_SRCS
   controls/controller_motion.cpp
   controls/controller.cpp
   controls/input_seats.cpp
+  controls/seat_input.cpp
   controls/devices/joystick.cpp
   controls/devices/kbcontroller.cpp
   controls/game_controls.cpp
