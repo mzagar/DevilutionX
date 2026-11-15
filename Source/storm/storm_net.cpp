@@ -148,6 +148,8 @@ bool SNetInitializeProvider(uint32_t provider, struct GameData *gameData)
 	std::lock_guard<SdlMutex> lg(storm_net_mutex);
 #endif
 	dvlnet_inst = net::abstract_net::MakeNet(provider);
+	if (gbLocalCoopAutoStart)
+		return true; // Dev auto-start has no UI to confirm a hero selection.
 	return (HeadlessMode && !demo::IsRunning()) || mainmenu_select_hero_dialog(gameData);
 }
 

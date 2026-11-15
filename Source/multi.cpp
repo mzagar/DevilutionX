@@ -605,6 +605,8 @@ void LoadLocalCoopSettings()
 	if (error == std::errc() && end == begin + seatsValue.size() && seats >= 2 && seats <= MAX_PLRS)
 		gbLocalCoopSeats = static_cast<uint8_t>(seats);
 	gbLocalCoopAutoStart = gbLocalCoopSeats != 0 && parsed->getBool("LocalCoop", "AutoStart", false);
+	if (gbLocalCoopSeats != 0)
+		Log("Local co-op: {} seats (autostart={})", gbLocalCoopSeats, gbLocalCoopAutoStart);
 }
 
 bool InitLocalCoop(GameData *gameData, uint8_t seats)
