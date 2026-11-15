@@ -64,6 +64,7 @@ set(tests
   game_menu_test
   item_flags_wire_test
   local_transport_test
+  input_seats_test
 )
 set(standalone_tests
   cl2_to_clx_test

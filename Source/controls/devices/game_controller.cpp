@@ -14,6 +14,7 @@
 #endif
 
 #include "controls/controller_motion.h"
+#include "controls/input_seats.hpp"
 #include "controls/devices/joystick.h"
 #include "utils/log.hpp"
 #include "utils/sdl_compat.h"
@@ -204,6 +205,8 @@ void GameController::Add(int joystickIndex)
 	const SDLUniquePtr<char> mapping { SDL_GameControllerMappingForGUID(guid) };
 #endif
 	controllers_.push_back(result);
+	// Bind the device to a local player seat before any input is routed.
+	InputSeats::Instance().Assign(static_cast<uint32_t>(result.instance_id_));
 
 	if (mapping) {
 		Log("Opened game controller with mapping:\n{}", mapping.get());
@@ -218,6 +221,7 @@ void GameController::Remove(SDL_JoystickID instanceId)
 		if (controller.instance_id_ != instanceId)
 			continue;
 		controllers_.erase(controllers_.begin() + i);
+		InputSeats::Instance().Release(static_cast<uint32_t>(instanceId));
 		return;
 	}
 	Log("Game controller not found with instance id: {}", instanceId);
