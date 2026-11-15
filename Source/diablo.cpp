@@ -2875,7 +2875,14 @@ int DiabloMain(int argc, char **argv)
 	if (!demo::IsRunning()) SaveOptions();
 
 	DiabloSplash();
-	mainmenu_loop();
+	LoadLocalCoopSettings();
+	if (gbLocalCoopAutoStart) {
+		// Dev switch for console checks: warm up straight into a local session.
+		gSaveNumber = 0;
+		StartGame(/*bNewGame=*/true, /*bSinglePlayer=*/true);
+	} else {
+		mainmenu_loop();
+	}
 	DiabloDeinit();
 
 	return 0;

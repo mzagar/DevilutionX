@@ -5,6 +5,7 @@
  */
 #include "multi.h"
 
+#include <charconv>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -77,6 +78,7 @@ Uint32 playerInfoTimers[MAX_PLRS];
 bool IsLoopback;
 uint8_t gbLocalCoopSeats;
 uint8_t gbLocalCoopSender;
+bool gbLocalCoopAutoStart;
 
 /**
  * Contains the set of supported event types supported by the multiplayer
@@ -568,6 +570,7 @@ bool InitSingle(GameData *gameData)
 void LoadLocalCoopSettings()
 {
 	gbLocalCoopSeats = 0;
+	gbLocalCoopAutoStart = false;
 
 	const std::string path = StrCat(paths::PrefPath(), "local_coop.ini");
 	FILE *file = OpenFile(path.c_str(), "rb");
@@ -589,9 +592,19 @@ void LoadLocalCoopSettings()
 		LogError("local_coop.ini: {}", parsed.error());
 		return;
 	}
-	const int seats = parsed->getInt("LocalCoop", "Seats", 0);
-	if (seats >= 2 && seats <= MAX_PLRS)
+	// Parse without Ini::getInt(): a malformed hand-edited value must not abort
+	// the game. Anything that is not 2..MAX_PLRS keeps single-player behaviour.
+	std::string_view seatsValue = parsed->getString("LocalCoop", "Seats");
+	while (!seatsValue.empty() && (seatsValue.front() == ' ' || seatsValue.front() == '\t'))
+		seatsValue.remove_prefix(1);
+	while (!seatsValue.empty() && (seatsValue.back() == ' ' || seatsValue.back() == '\t'))
+		seatsValue.remove_suffix(1);
+	int seats = 0;
+	const char *const begin = seatsValue.data();
+	const auto [end, error] = std::from_chars(begin, begin + seatsValue.size(), seats);
+	if (error == std::errc() && end == begin + seatsValue.size() && seats >= 2 && seats <= MAX_PLRS)
 		gbLocalCoopSeats = static_cast<uint8_t>(seats);
+	gbLocalCoopAutoStart = gbLocalCoopSeats != 0 && parsed->getBool("LocalCoop", "AutoStart", false);
 }
 
 bool InitLocalCoop(GameData *gameData, uint8_t seats)

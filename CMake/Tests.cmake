@@ -65,6 +65,7 @@ set(tests
   item_flags_wire_test
   local_transport_test
   loopback_transport_test
+  local_coop_settings_test
   input_seats_test
   seat_input_test
 )

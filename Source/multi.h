@@ -48,6 +48,8 @@ extern bool IsLoopback;
 // currently owns the command being built (used to tag the message sender).
 extern uint8_t gbLocalCoopSeats;
 extern uint8_t gbLocalCoopSender;
+// Dev switch for automated console checks: skip the menu and start seat 0.
+extern bool gbLocalCoopAutoStart;
 
 void SwapGameDataLE(GameData &gameData);
 std::string DescribeLeaveReason(leaveinfo_t leaveReason);
