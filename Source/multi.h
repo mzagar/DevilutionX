@@ -44,6 +44,11 @@ extern uint8_t gbDeltaSender;
 extern uint32_t player_state[MAX_PLRS];
 extern bool IsLoopback;
 
+// Local co-op: number of local seats in this session (0 = off) and the seat that
+// currently owns the command being built (used to tag the message sender).
+extern uint8_t gbLocalCoopSeats;
+extern uint8_t gbLocalCoopSender;
+
 void SwapGameDataLE(GameData &gameData);
 std::string DescribeLeaveReason(leaveinfo_t leaveReason);
 std::string FormatGameSeed(const uint32_t gameSeed[4]);
@@ -64,6 +69,7 @@ void ProcessGameMessagePackets();
 void multi_send_zero_packet(uint8_t pnum, _cmd_id bCmd, const std::byte *data, size_t size);
 void NetClose();
 bool NetInit(bool bSinglePlayer);
+bool InitLocalCoop(GameData *gameData, uint8_t seats);
 void recv_plrinfo(Player &player, const TCmdPlrInfoHdr &header, bool recv);
 
 } // namespace devilution

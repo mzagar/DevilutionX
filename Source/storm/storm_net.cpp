@@ -46,6 +46,8 @@ bool SNetSendMessage(uint8_t playerID, void *data, size_t databytes)
 #ifndef NONET
 	std::lock_guard<SdlMutex> lg(storm_net_mutex);
 #endif
+	if (gbLocalCoopSeats != 0)
+		return dvlnet_inst->SNetSendMessageAs(gbLocalCoopSender, playerID, data, databytes);
 	return dvlnet_inst->SNetSendMessage(playerID, data, databytes);
 }
 

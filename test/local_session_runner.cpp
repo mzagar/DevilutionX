@@ -15,6 +15,7 @@
  */
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -36,6 +37,7 @@
 #include "engine/assets.hpp"
 #include "game_mode.hpp"
 #include "headless_mode.hpp"
+#include "controls/seat_input.h"
 #include "init.hpp"
 #include "items.h"
 #include "levels/gendung.h"
@@ -77,6 +79,7 @@ struct RunnerOptions {
 	std::string createHero;
 	uint32_t hero = 0;
 	int ticks = 50;
+	int seats = 1;
 	int walkTiles = 0;
 	int checkpointInterval = 0;
 	bool showHelp = false;
@@ -121,6 +124,7 @@ void PrintHelp()
 	    "  --hero <n>         hero save number (default: 0)\n"
 	    "  --create-hero <c>  create a disposable hero first (warrior|rogue|sorcerer|monk)\n"
 	    "  --ticks <n>        logic ticks to run (default: 50)\n"
+	    "  --seats <n>        local co-op seats (1-4, default: 1)\n"
 	    "  --walk <n>         ask the hero to walk n tiles east before ticking (default: 0)\n"
 	    "  --checkpoint <n>   emit a checkpoint every n ticks (default: ticks/4)\n"
 	    "\n"
@@ -165,6 +169,10 @@ bool ParseArgs(int argc, char **argv, RunnerOptions &out)
 			const char *value = needValue(arg);
 			if (value == nullptr) return false;
 			out.ticks = std::atoi(value);
+		} else if (arg == "--seats") {
+			const char *value = needValue(arg);
+			if (value == nullptr) return false;
+			out.seats = std::atoi(value);
 		} else if (arg == "--walk") {
 			const char *value = needValue(arg);
 			if (value == nullptr) return false;
@@ -184,6 +192,10 @@ bool ParseArgs(int argc, char **argv, RunnerOptions &out)
 		return false;
 	}
 #endif
+	if (out.seats < 1 || out.seats > MAX_PLRS) {
+		std::fprintf(stderr, "--seats must be between 1 and %d\n", MAX_PLRS);
+		return false;
+	}
 	if (out.ticks <= 0) {
 		std::fprintf(stderr, "--ticks must be positive\n");
 		return false;
@@ -193,17 +205,19 @@ bool ParseArgs(int argc, char **argv, RunnerOptions &out)
 	return true;
 }
 
-[[nodiscard]] std::string DescribePlayer()
+[[nodiscard]] std::string DescribePlayer(uint8_t seat)
 {
-	if (MyPlayer == nullptr)
+	if (seat >= Players.size())
 		return "\"player\":null";
+	const Player &player = Players[seat];
 	return std::format(
-	    "\"level\":{},\"x\":{},\"y\":{},\"hp\":{},\"mana\":{}",
-	    static_cast<int>(MyPlayer->getCharacterLevel()),
-	    MyPlayer->position.tile.x,
-	    MyPlayer->position.tile.y,
-	    MyPlayer->_pHitPoints.raw(),
-	    MyPlayer->_pMana.raw());
+	    "\"seat\":{},\"level\":{},\"x\":{},\"y\":{},\"hp\":{},\"mana\":{}",
+	    seat,
+	    static_cast<int>(player.getCharacterLevel()),
+	    player.position.tile.x,
+	    player.position.tile.y,
+	    player._pHitPoints.raw(),
+	    player._pMana.raw());
 }
 
 [[nodiscard]] std::string DescribeWorld()
@@ -218,7 +232,8 @@ bool ParseArgs(int argc, char **argv, RunnerOptions &out)
 
 void EmitCheckpoint(int tick)
 {
-	Emit("CHECKPOINT", StrCat("\"tick\":", tick, ",", DescribePlayer(), ",", DescribeWorld()));
+	for (uint8_t seat = 0; seat < gbLocalCoopSeats && seat < Players.size(); ++seat)
+		Emit("CHECKPOINT", StrCat("\"tick\":", tick, ",", DescribePlayer(seat), ",", DescribeWorld()));
 }
 
 std::optional<HeroClass> ParseHeroClass(std::string_view name)
@@ -328,20 +343,24 @@ int main(int argc, char **argv)
 	AdjustToScreenGeometry(forceResolution);
 
 	bool heroCreated = false;
-	if (!opts.createHero.empty()) {
-		const std::optional<HeroClass> heroClass = ParseHeroClass(opts.createHero);
-		if (!heroClass.has_value())
-			return Fail(StrCat("unknown hero class: ", opts.createHero));
-		heroCreated = CreateDisposableHero(*heroClass, opts.hero);
-		if (!heroCreated)
-			return Fail("could not create the disposable hero");
+	const std::optional<HeroClass> heroClass = ParseHeroClass(opts.createHero);
+	if (!opts.createHero.empty() && !heroClass.has_value())
+		return Fail(StrCat("unknown hero class: ", opts.createHero));
+	for (int seat = 0; seat < opts.seats; ++seat) {
+		if (!opts.createHero.empty()) {
+			if (!CreateDisposableHero(*heroClass, static_cast<uint32_t>(seat)))
+				return Fail(StrCat("could not create the disposable hero for seat ", seat));
+			heroCreated = true;
+		}
 	}
 
 	gbLoadGame = false;
 	gSaveNumber = opts.hero;
+	gbLocalCoopSeats = static_cast<uint8_t>(opts.seats);
 
 	Emit("SESSION", StrCat(
 	                  "\"hero\":", opts.hero,
+	                  ",\"seats\":", opts.seats,
 	                  ",\"spawn\":", archivesSpawn ? "true" : "false",
 	                  ",\"createdHero\":", heroCreated ? "true" : "false",
 	                  ",\"hellfire\":false,\"ticks\":", opts.ticks,
@@ -362,12 +381,21 @@ int main(int argc, char **argv)
 	GameLoopBegin(WM_DIABNEWGAME);
 	EmitCheckpoint(0);
 
-	const Point startTile = MyPlayer->position.tile;
-	if (opts.walkTiles != 0) {
-		const Point target { startTile.x + opts.walkTiles, startTile.y };
+	std::array<Point, MAX_PLRS> startTiles {};
+	for (uint8_t seat = 0; seat < gbLocalCoopSeats; ++seat)
+		startTiles[seat] = Players[seat].position.tile;
+
+	if (opts.walkTiles != 0 && opts.seats == 1) {
+		const Point target { startTiles[0].x + opts.walkTiles, startTiles[0].y };
 		MakePlrPath(*MyPlayer, target, /*endspace=*/true);
 		MyPlayer->destAction = ACTION_WALK;
 		Emit("ACTION", StrCat("\"walkTo\":[", target.x, ",", target.y, "]"));
+	}
+	if (opts.walkTiles != 0 && opts.seats > 1) {
+		// Drive each local seat through the production per-seat input path.
+		for (uint8_t seat = 0; seat < gbLocalCoopSeats; ++seat)
+			SeatInput::Instance().OnAxis(seat, SeatInput::SeatAxisLeftX, opts.walkTiles > 0 ? 32767.0F : -32767.0F);
+		Emit("ACTION", StrCat("\"seatAxisX\":", opts.walkTiles > 0 ? 32767 : -32767));
 	}
 
 	for (int tick = 1; tick <= opts.ticks; tick++) {
@@ -377,19 +405,20 @@ int main(int argc, char **argv)
 			EmitCheckpoint(tick);
 	}
 
-	const bool moved = MyPlayer->position.tile != startTile;
-	const std::string finalPlayer = DescribePlayer();
+	bool allMoved = true;
+	for (uint8_t seat = 0; seat < gbLocalCoopSeats && seat < Players.size(); ++seat) {
+		const bool moved = Players[seat].position.tile != startTiles[seat];
+		if (!moved)
+			allMoved = false;
+		Emit("FINAL", DescribePlayer(seat));
+		if (opts.walkTiles != 0)
+			Emit("MOVE_CHECK", StrCat("\"seat\":", seat, ",\"moved\":", moved ? "true" : "false"));
+	}
 	GameLoopEnd();
 	NetClose();
 
-	Emit("FINAL", finalPlayer);
-	if (opts.walkTiles != 0) {
-		Emit("MOVE_CHECK", StrCat(
-		                       "\"requested\":", opts.walkTiles,
-		                       ",\"moved\":", moved ? "true" : "false"));
-	}
 	Emit("RESULT", StrCat(
-	                  "\"status\":\"", (opts.walkTiles != 0 && !moved) ? "FAIL" : "PASS",
+	                  "\"status\":\"", (opts.walkTiles != 0 && !allMoved) ? "FAIL" : "PASS",
 	                  "\",\"ticks\":", opts.ticks));
 
 	init_cleanup();

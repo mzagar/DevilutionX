@@ -100,10 +100,10 @@ bool TriggersQuickSpellAction(ControllerButton button)
 	return truncatedActionName == prefix;
 }
 
-bool IsPressedForMovement(ControllerButton button)
+bool IsPressedForMovement(uint8_t seat, ControllerButton button)
 {
 	return !PadMenuNavigatorActive
-	    && IsControllerButtonPressed(button)
+	    && IsControllerButtonPressedOnSeat(seat, button)
 	    && !IsMovementOverriddenByPadmapper(button)
 	    && !(SpellSelectFlag && TriggersQuickSpellAction(button));
 }
@@ -200,7 +200,7 @@ void StoreSeatAxes(const SDL_Event &event)
 		const GameController *controller = GameController::Get(event);
 		if (controller == nullptr)
 			return;
-		const uint8_t seat = InputSeats::Instance().SeatFor(static_cast<uint32_t>(controller->instance_id()));
+		const uint8_t seat = SeatForControllerEvent(event);
 		const SDL_GamepadAxisEvent &axis = SDLC_EventGamepadAxis(event);
 		switch (axis.axis) {
 		case SDL_GAMEPAD_AXIS_LEFTX:
@@ -224,7 +224,7 @@ void StoreSeatAxes(const SDL_Event &event)
 		const Joystick *joystick = Joystick::Get(event);
 		if (joystick == nullptr)
 			return;
-		const uint8_t seat = InputSeats::Instance().SeatFor(static_cast<uint32_t>(joystick->instance_id()));
+		const uint8_t seat = SeatForControllerEvent(event);
 #if defined(JOY_AXIS_LEFTX) || defined(JOY_AXIS_LEFTY) || defined(JOY_AXIS_RIGHTX) || defined(JOY_AXIS_RIGHTY)
 		switch (event.jaxis.axis) {
 #ifdef JOY_AXIS_LEFTX
@@ -262,6 +262,9 @@ void StoreSeatAxes(const SDL_Event &event)
 void ProcessControllerMotion(const SDL_Event &event)
 {
 	StoreSeatAxes(event);
+	// The legacy (seat 0) motion state must not be driven by another pad.
+	if (SeatForControllerEvent(event) != 0)
+		return;
 #ifndef USE_SDL1
 	GameController *const controller = GameController::Get(event);
 	if (controller != nullptr && devilution::GameController::ProcessAxisMotion(event)) {
@@ -326,10 +329,10 @@ AxisDirection GetLeftStickOrDpadDirection(bool usePadmapper)
 		isLeftPressed |= PadmapperIsActionActive("MoveLeft");
 		isRightPressed |= PadmapperIsActionActive("MoveRight");
 	} else if (!SimulatingMouseWithPadmapper) {
-		isUpPressed |= IsPressedForMovement(ControllerButton_BUTTON_DPAD_UP);
-		isDownPressed |= IsPressedForMovement(ControllerButton_BUTTON_DPAD_DOWN);
-		isLeftPressed |= IsPressedForMovement(ControllerButton_BUTTON_DPAD_LEFT);
-		isRightPressed |= IsPressedForMovement(ControllerButton_BUTTON_DPAD_RIGHT);
+		isUpPressed |= IsPressedForMovement(0, ControllerButton_BUTTON_DPAD_UP);
+		isDownPressed |= IsPressedForMovement(0, ControllerButton_BUTTON_DPAD_DOWN);
+		isLeftPressed |= IsPressedForMovement(0, ControllerButton_BUTTON_DPAD_LEFT);
+		isRightPressed |= IsPressedForMovement(0, ControllerButton_BUTTON_DPAD_RIGHT);
 	}
 
 #ifndef USE_SDL1

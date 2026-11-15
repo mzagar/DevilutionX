@@ -27,4 +27,8 @@ bool IsControllerButtonComboPressedOnSeat(uint8_t seat, ControllerButtonCombo co
 
 bool HandleControllerAddedOrRemovedEvent(const SDL_Event &event);
 
+// Resolves the local seat that owns an SDL event. Unknown devices and keyboard
+// input map to seat 0, which keeps single-player behaviour unchanged.
+uint8_t SeatForControllerEvent(const SDL_Event &event);
+
 } // namespace devilution

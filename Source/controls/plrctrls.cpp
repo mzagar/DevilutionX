@@ -42,6 +42,8 @@
 #include "levels/trigs.h"
 #include "minitext.h"
 #include "missiles.h"
+#include "msg.h"
+#include "multi.h"
 #include "panels/quest_log.hpp"
 #include "panels/spell_icons.hpp"
 #include "panels/spell_list.hpp"
@@ -2291,6 +2293,27 @@ void plrctrls_every_frame()
 void plrctrls_after_game_logic()
 {
 	Movement(*MyPlayer);
+
+	// Local co-op: every additional seat drives its own hero through the same
+	// production movement/attack path. The sender tag makes the engine apply the
+	// resulting command to that seat's player instead of the camera owner.
+	for (uint8_t seat = 1; seat < gbLocalCoopSeats && seat < Players.size(); ++seat) {
+		Player &player = Players[seat];
+		if (!player.plractive)
+			continue;
+
+		const uint8_t previousSender = gbLocalCoopSender;
+		gbLocalCoopSender = seat;
+		const AxisDirection dir = GetLeftStickOrDpadDirectionForSeat(seat, /*usePadmapper=*/false);
+		WalkInDir(player, dir);
+		if (IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_A)) {
+			const Direction pdir = (dir.x == AxisDirectionX_NONE && dir.y == AxisDirectionY_NONE)
+			    ? player._pdir
+			    : FaceDir[static_cast<std::size_t>(dir.x)][static_cast<std::size_t>(dir.y)];
+			NetSendCmdLoc(seat, true, player.UsesRangedWeapon() ? CMD_RATTACKXY : CMD_SATTACKXY, player.position.future + pdir);
+		}
+		gbLocalCoopSender = previousSender;
+	}
 }
 
 void UseBeltItem(BeltItemType type)

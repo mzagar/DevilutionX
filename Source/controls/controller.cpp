@@ -78,18 +78,23 @@ StaticVector<ControllerButtonEvent, 4> ToControllerButtonEventsImpl(const SDL_Ev
 	return { result };
 }
 
+} // namespace
+
 uint8_t SeatForControllerEvent(const SDL_Event &event)
 {
+	const uint8_t noSeat = InputSeats::NoSeat;
 #ifndef USE_SDL1
-	if (const GameController *controller = GameController::Get(event); controller != nullptr)
-		return InputSeats::Instance().SeatFor(static_cast<uint32_t>(controller->instance_id()));
+	if (const GameController *controller = GameController::Get(event); controller != nullptr) {
+		const uint8_t seat = InputSeats::Instance().SeatFor(static_cast<uint32_t>(controller->instance_id()));
+		return seat == noSeat ? 0 : seat;
+	}
 #endif
-	if (const Joystick *joystick = Joystick::Get(event); joystick != nullptr)
-		return InputSeats::Instance().SeatFor(static_cast<uint32_t>(joystick->instance_id()));
+	if (const Joystick *joystick = Joystick::Get(event); joystick != nullptr) {
+		const uint8_t seat = InputSeats::Instance().SeatFor(static_cast<uint32_t>(joystick->instance_id()));
+		return seat == noSeat ? 0 : seat;
+	}
 	return 0; // Keyboard and virtual-pad input belong to the first seat.
 }
-
-} // namespace
 
 StaticVector<ControllerButtonEvent, 4> ToControllerButtonEvents(const SDL_Event &event)
 {

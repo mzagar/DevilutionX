@@ -72,6 +72,8 @@ bool sgbNetInited;
 uint32_t player_state[MAX_PLRS];
 Uint32 playerInfoTimers[MAX_PLRS];
 bool IsLoopback;
+uint8_t gbLocalCoopSeats;
+uint8_t gbLocalCoopSender;
 
 /**
  * Contains the set of supported event types supported by the multiplayer
@@ -157,7 +159,11 @@ std::byte *CopyBufferedPackets(std::byte *destination, TBuffer *source, size_t *
 
 void NetReceivePlayerData(TPkt *pkt)
 {
-	const Player &myPlayer = *MyPlayer;
+	// The packet header describes the player who owns the command, which is not
+	// necessarily the camera owner during local co-op.
+	const Player &myPlayer = (gbLocalCoopSeats != 0 && gbLocalCoopSender < Players.size())
+	    ? Players[gbLocalCoopSender]
+	    : *MyPlayer;
 	Point target = myPlayer.GetTargetPosition();
 	// Don't send desired target position when we will change our position soon.
 	// This prevents a desync where the remote client starts a walking to the old target position when the teleport is finished but the the new position isn't received yet.
@@ -454,6 +460,19 @@ void SetupLocalPositions()
 	myPlayer.pLvlLoad = 0;
 	myPlayer._pmode = PM_NEWLVL;
 	myPlayer.destAction = ACTION_NONE;
+
+	for (uint8_t seat = 1; seat < gbLocalCoopSeats && seat < Players.size(); ++seat) {
+		Player &player = Players[seat];
+		player.position.tile = spawns[seat];
+		player.position.future = player.position.tile;
+		player.setLevel(currlevel);
+		// Additional local seats are already on their spawn tile: no level
+		// transition animation, and ProcessPlayers must not skip them.
+		player._pLvlChanging = false;
+		player.pLvlLoad = 0;
+		player._pmode = PM_STAND;
+		player.destAction = ACTION_NONE;
+	}
 }
 
 void HandleEvents(_SNETEVENT *pEvt)
@@ -540,6 +559,48 @@ bool InitSingle(GameData *gameData)
 
 	return true;
 }
+
+} // namespace
+
+bool InitLocalCoop(GameData *gameData, uint8_t seats)
+{
+	if (seats == 0 || seats > MAX_PLRS)
+		return false;
+
+	gbLocalCoopSeats = seats;
+	gbLocalCoopSender = 0;
+	Players.resize(MAX_PLRS);
+
+	if (!SNetInitializeProvider(SELCONN_LOOPBACK, gameData)) {
+		return false;
+	}
+
+	int unused = 0;
+	GameData gameInitInfo = sgGameInitInfo;
+	SwapGameDataLE(gameInitInfo);
+	if (!SNetCreateGame("local", "local", reinterpret_cast<char *>(&gameInitInfo), sizeof(gameInitInfo), &unused)) {
+		app_fatal(StrCat("SNetCreateGame1:\n", SDL_GetError()));
+	}
+
+	MyPlayerId = 0;
+	MyPlayer = &Players[MyPlayerId];
+	InspectPlayer = MyPlayer;
+	gbIsMultiplayer = false;
+
+	// Seat 0 is the camera/UI owner; the other seats are local players whose
+	// commands are injected through the loopback provider with their own sender id.
+	for (uint8_t seat = 0; seat < seats; ++seat) {
+		gSaveNumber = seat;
+		pfile_read_player_from_save(seat, Players[seat]);
+		Players[seat].plractive = true;
+		ResetPlayerGFX(Players[seat]);
+	}
+
+	gbActivePlayers = seats;
+	return true;
+}
+
+namespace {
 
 bool InitMulti(GameData *gameData)
 {
@@ -651,6 +712,15 @@ void multi_send_msg_packet(uint32_t pmask, const std::byte *data, size_t size)
 	const size_t len = size + sizeof(pkt.hdr);
 	pkt.hdr.wLen = Swap16LE(static_cast<uint16_t>(len));
 	memcpy(pkt.body, data, size);
+	if (gbLocalCoopSeats != 0) {
+		// One provider, several local players: deliver once, tagged with the seat
+		// that owns the command instead of fanning out per destination.
+		if (!SNetSendMessageAs(gbLocalCoopSender, SNPLAYER_OTHERS, &pkt.hdr, len)) {
+			nthread_terminate_game("SNetSendMessageAs");
+		}
+		return;
+	}
+
 	uint8_t playerID = 0;
 	for (uint32_t v = 1; playerID < Players.size(); playerID++, v <<= 1) {
 		if ((v & pmask) != 0) {
@@ -840,7 +910,10 @@ bool NetInit(bool bSinglePlayer)
 		MyPlayer = nullptr;
 		memset(sgwPackPlrOffsetTbl, 0, sizeof(sgwPackPlrOffsetTbl));
 		SNetSetBasePlayer(0);
-		if (bSinglePlayer) {
+		if (gbLocalCoopSeats != 0) {
+			if (!InitLocalCoop(&sgGameInitInfo, gbLocalCoopSeats))
+				return false;
+		} else if (bSinglePlayer) {
 			if (!InitSingle(&sgGameInitInfo))
 				return false;
 		} else {
@@ -868,7 +941,7 @@ bool NetInit(bool bSinglePlayer)
 		Player &myPlayer = *MyPlayer;
 		ResetPlayerGFX(myPlayer);
 		myPlayer.plractive = true;
-		gbActivePlayers = 1;
+		gbActivePlayers = gbLocalCoopSeats != 0 ? gbLocalCoopSeats : 1;
 
 		if (!sgbPlayerTurnBitTbl[MyPlayerId] || msg_wait_resync())
 			break;
