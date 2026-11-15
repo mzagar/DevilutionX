@@ -70,6 +70,9 @@ void multi_send_zero_packet(uint8_t pnum, _cmd_id bCmd, const std::byte *data, s
 void NetClose();
 bool NetInit(bool bSinglePlayer);
 bool InitLocalCoop(GameData *gameData, uint8_t seats);
+
+// Reads the local co-op seat count from <pref>/local_coop.ini (0 = off).
+void LoadLocalCoopSettings();
 void recv_plrinfo(Player &player, const TCmdPlrInfoHdr &header, bool recv);
 
 } // namespace devilution

@@ -2746,6 +2746,9 @@ bool StartGame(bool bNewGame, bool bSinglePlayer)
 	do {
 		gbLoadGame = false;
 
+		if (bSinglePlayer)
+			LoadLocalCoopSettings();
+
 		if (!NetInit(bSinglePlayer)) {
 			gbRunGameResult = true;
 			break;

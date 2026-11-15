@@ -46,6 +46,9 @@
 #include "utils/format.hpp"
 #include "utils/is_of.hpp"
 #include "utils/language.h"
+#include "utils/file_util.h"
+#include "utils/ini.hpp"
+#include "utils/paths.h"
 #include "utils/log.hpp"
 #include "utils/str_cat.hpp"
 
@@ -562,6 +565,35 @@ bool InitSingle(GameData *gameData)
 
 } // namespace
 
+void LoadLocalCoopSettings()
+{
+	gbLocalCoopSeats = 0;
+
+	const std::string path = StrCat(paths::PrefPath(), "local_coop.ini");
+	FILE *file = OpenFile(path.c_str(), "rb");
+	if (file == nullptr)
+		return;
+	uintmax_t size = 0;
+	std::vector<char> buffer;
+	if (GetFileSize(path.c_str(), &size) && size > 0 && size < 64 * 1024) {
+		buffer.resize(static_cast<size_t>(size));
+		if (std::fread(buffer.data(), buffer.size(), 1, file) != 1)
+			buffer.clear();
+	}
+	std::fclose(file);
+	if (buffer.empty())
+		return;
+
+	std::expected<Ini, std::string> parsed = Ini::parse(std::string_view(buffer.data(), buffer.size()));
+	if (!parsed.has_value()) {
+		LogError("local_coop.ini: {}", parsed.error());
+		return;
+	}
+	const int seats = parsed->getInt("LocalCoop", "Seats", 0);
+	if (seats >= 2 && seats <= MAX_PLRS)
+		gbLocalCoopSeats = static_cast<uint8_t>(seats);
+}
+
 bool InitLocalCoop(GameData *gameData, uint8_t seats)
 {
 	if (seats == 0 || seats > MAX_PLRS)
@@ -597,6 +629,7 @@ bool InitLocalCoop(GameData *gameData, uint8_t seats)
 	}
 
 	gbActivePlayers = seats;
+	Log("Local co-op session with {} seats", seats);
 	return true;
 }
 
