@@ -67,6 +67,8 @@ set(libdevilutionx_SRCS
   dvlnet/base.cpp
   dvlnet/cdwrap.cpp
   dvlnet/frame_queue.cpp
+  dvlnet/local_bus.cpp
+  dvlnet/local_client.cpp
   dvlnet/loopback.cpp
   dvlnet/packet.cpp
 
