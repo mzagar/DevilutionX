@@ -11,7 +11,7 @@ Copy everything below into the first message of a new session.
 
 ---
 
-Nastavljamo rad na Wii U portu DevilutionX-a u `/Users/mario/work/wiiu/DevilutionX`
+Nastavljamo rad na Wii U portu DevilutionX-a u ovom repozitoriju
 (branch `wiiu`).
 
 **Prvo pročitaj:**

@@ -229,7 +229,7 @@ A first implementation can retain multiplayer engine code and select a new local
 
 Audit compression and crypto dependencies during that separation. For example, packet cookie generation can use `randombytes` when `PACKET_ENCRYPTION` is enabled. Do not claim a reused path is dependency-free without tracing it.
 
-An in-process bus does not need encrypted private-game packets. Keep normal external-network encryption intact. The separate [Wii U network handoff](file:///Users/mzagar/work/github/mzagar/DevilutionX/docs/wiiu-multiplayer-implementation-handoff.md) documents external protocol and endian risks. Local same-build tests do not prove cross-platform wire compatibility.
+An in-process bus does not need encrypted private-game packets. Keep normal external-network encryption intact. The separate Wii U network handoff (not part of this repository) documents external protocol and endian risks. Local same-build tests do not prove cross-platform wire compatibility.
 
 ### 4.3 Local transport contract
 

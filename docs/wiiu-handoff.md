@@ -33,10 +33,35 @@ The machine-readable test harness and the exact commands are in
 ## ⚡ Quick start
 
 ```bash
-cd /Users/mario/work/wiiu/DevilutionX
-tools/wiiu/wiiu-run.sh 40              # build → patch → package → run → log
+cd path/to/DevilutionX
+tools/wiiu/wiiu-run.sh 40              # configure → build → patch → package → run → log
 tools/wiiu/wiiu-run.sh 40 --no-build   # re-run without rebuilding
 ```
+
+### From a fresh clone
+
+Prerequisites:
+
+- devkitPro with the Wii U toolchain: `devkitPPC`, `wut`, `wiiu-cmake`,
+  `wiiu-sdl2`, `wiiu-pkg-config`, and `wut-tools` (`elf2rpl`, `wuhbtool`).
+- CMake 3.22 or newer, and `make` (or Ninja).
+- Optional: Docker, for `tools/wiiu/build-hf-mpq.sh` when `smpq` is missing.
+
+```bash
+cmake -S . -B build-wiiu-release \
+  -DCMAKE_TOOLCHAIN_FILE=/opt/devkitpro/cmake/WiiU.cmake \
+  -DCMAKE_BUILD_TYPE=Release
+
+tools/wiiu/build-hf-mpq.sh        # pack mods/hf -> build-wiiu-release/mods/hf.mpq
+tools/wiiu/wiiu-run.sh 40         # build → unstrip → tweq → package → Cemu
+
+# The WUHB is at build-wiiu-release/devilutionx.wuhb. Copy it to the SD card
+# (sd:/wiiu/apps/devilutionx/) together with the retail MPQs.
+```
+
+`package-wuhb.sh` downloads the shareware `spawn.mpq` once if it is missing.
+The first `wiiu-run.sh` run configures the build directory. Set `WIIU_MLC` if
+Cemu does not have its MLC path configured.
 
 Log:
 
@@ -435,7 +460,7 @@ ignored** or it dies with signal 13 as soon as the guest writes to its socket:
 
 ```bash
 python3 -c 'import os,signal,sys; signal.signal(signal.SIGPIPE, signal.SIG_IGN); os.execv("/Applications/Cemu.app/Contents/MacOS/Cemu", sys.argv[:1]+sys.argv[1:])' \
-  -g build-wiiu-net/network_peer.wuhb -m /Users/mario/work/wiiu/cemu-mlc
+  -g build-wiiu-net/network_peer.wuhb      # add "-m <MLC>" only if Cemu is not configured
 ```
 
 ### Real game, manual UI (already confirmed working)
@@ -443,7 +468,7 @@ python3 -c 'import os,signal,sys; signal.signal(signal.SIGPIPE, signal.SIG_IGN);
 Host on the Mac, join from Cemu:
 
 ```bash
-cd /Users/mario/work/wiiu/DevilutionX
+cd path/to/DevilutionX
 
 open -n build-macos/devilutionx.app            # Multiplayer → TCP → Host Game
 tools/wiiu/cemu-run.sh build-wiiu-release/devilutionx.wuhb
@@ -598,7 +623,7 @@ There is **no `mods/` directory on the SD card** — the mod lives in the WUHB.
 | What | Where |
 |------|-------|
 | Cemu | `/Applications/Cemu.app` |
-| Cemu MLC | `/Users/mario/work/wiiu/cemu-mlc` |
+| Cemu MLC | Cemu's own setting; override with `WIIU_MLC` |
 | Cemu log | `~/Library/Application Support/Cemu/log.txt` (rewritten each run) |
 | Emulated SD card | `~/Library/Application Support/Cemu/sdcard/` → `/vol/external01` |
 | devkitPro | `/opt/devkitpro` (`elf2rpl`, `wuhbtool` in `tools/bin`) |

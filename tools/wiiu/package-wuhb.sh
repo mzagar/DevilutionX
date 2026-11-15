@@ -21,7 +21,7 @@
 #
 # Environment overrides:
 #   WIIU_BUILD_DIR   build directory      (default: <repo>/build-wiiu-release)
-#   WIIU_ASSETS_DIR  built assets dir     (default: <repo>/build-wiiu-clean/assets)
+#   WIIU_ASSETS_DIR  built assets dir     (default: <build>/assets)
 #   WIIU_ICON        128x128 icon png     (default: <repo>/Packaging/wiiu/icon.png)
 #   WIIU_HF_MPQ      packed Hellfire mod   (default: <build>/mods/hf.mpq)
 #   DEVKITPRO        devkitPro root       (default: /opt/devkitpro)
@@ -32,7 +32,7 @@ set -eu
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 BUILD=${WIIU_BUILD_DIR:-$REPO/build-wiiu-release}
-ASSETS=${WIIU_ASSETS_DIR:-$REPO/build-wiiu-clean/assets}
+ASSETS=${WIIU_ASSETS_DIR:-$BUILD/assets}
 ICON=${WIIU_ICON:-$REPO/Packaging/wiiu/icon.png}
 DEVKITPRO=${DEVKITPRO:-/opt/devkitpro}
 ELF2RPL="$DEVKITPRO/tools/bin/elf2rpl"
@@ -49,12 +49,15 @@ done
 
 if [ ! -d "$ASSETS" ]; then
   echo "error: assets directory not found: $ASSETS" >&2
-  echo "       (build with BUILD_ASSETS_MPQ=ON, or set WIIU_ASSETS_DIR)" >&2
+  echo "       build the game first (make -C $BUILD) or set WIIU_ASSETS_DIR" >&2
   exit 1
 fi
 if [ ! -f "$ASSETS/spawn.mpq" ]; then
-  echo "error: $ASSETS/spawn.mpq not found — the WUHB would be unbootable" >&2
-  exit 1
+  echo "spawn.mpq not found in $ASSETS"
+  echo "downloading the shareware asset pack (one time)..."
+  curl -fL -o "$ASSETS/spawn.mpq" \
+    https://github.com/diasurgical/devilutionx-assets/releases/download/v2/spawn.mpq \
+    || { echo "error: could not download spawn.mpq; place it in $ASSETS" >&2; exit 1; }
 fi
 
 if [ "$DO_RPL" = 1 ]; then

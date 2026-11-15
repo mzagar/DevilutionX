@@ -694,7 +694,7 @@ python3 ../tools/wiiu/cemu-tweq-workaround.py devilutionx.elf
 
 # 5. Run
 "/Applications/Cemu.app/Contents/MacOS/Cemu" \
-  -g "$PWD/devilutionx.wuhb" -m /Users/mario/work/wiiu/cemu-mlc
+  -g "$PWD/devilutionx.wuhb"      # add "-m <MLC>" only if Cemu is not configured
 ```
 
 All of this is wrapped by `tools/wiiu/wiiu-run.sh`.

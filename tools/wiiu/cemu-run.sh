@@ -9,16 +9,20 @@
 # Usage: tools/wiiu/cemu-run.sh <game.wuhb|game.rpx> [extra Cemu args...]
 #
 # Environment overrides:
-#   WIIU_CEMU  Cemu binary  (default: /Applications/Cemu.app/Contents/MacOS/Cemu)
-#   WIIU_MLC   Cemu MLC     (default: /Users/mario/work/wiiu/cemu-mlc)
+#   WIIU_CEMU  Cemu binary   (default: /Applications/Cemu.app/Contents/MacOS/Cemu)
+#   WIIU_MLC   Cemu MLC path (optional; default: Cemu's own setting)
 set -eu
 CEMU=${WIIU_CEMU:-/Applications/Cemu.app/Contents/MacOS/Cemu}
-MLC=${WIIU_MLC:-/Users/mario/work/wiiu/cemu-mlc}
 
 if [ $# -lt 1 ]; then
   echo "usage: $0 <game.wuhb|game.rpx> [extra Cemu args...]" >&2
   exit 2
 fi
 
-python3 -c 'import os, signal, sys; signal.signal(signal.SIGPIPE, signal.SIG_IGN); os.execv(sys.argv[1], sys.argv[1:])' \
-  "$CEMU" -g "$1" -m "$MLC" "${@:2}"
+ARGS=("$CEMU" -g "$1")
+if [ -n "${WIIU_MLC:-}" ]; then
+  ARGS+=(-m "$WIIU_MLC")
+fi
+ARGS+=("${@:2}")
+
+python3 -c 'import os, signal, sys; signal.signal(signal.SIGPIPE, signal.SIG_IGN); os.execv(sys.argv[1], sys.argv[1:])' "${ARGS[@]}"
