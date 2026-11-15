@@ -20,6 +20,21 @@ public:
 	virtual int join(std::string_view addrstr) = 0;
 	virtual bool SNetReceiveMessage(uint8_t *sender, void **data, size_t *size) = 0;
 	virtual bool SNetSendMessage(uint8_t dest, void *data, size_t size) = 0;
+	/**
+	 * @brief Queues a message with an explicit sender identity.
+	 *
+	 * Used by local co-op, where several local players share one process and
+	 * therefore one provider. External transports keep using
+	 * SNetSendMessage(): they cannot deliver on behalf of another local player.
+	 */
+	virtual bool SNetSendMessageAs(uint8_t sender, uint8_t dest, void *data, size_t size)
+	{
+		(void)sender;
+		(void)dest;
+		(void)data;
+		(void)size;
+		return false;
+	}
 	virtual bool SNetReceiveTurns(char **data, size_t *size, uint32_t *status) = 0;
 	virtual bool SNetSendTurn(char *data, size_t size) = 0;
 	virtual void SNetGetProviderCaps(struct _SNETCAPS *caps) = 0;

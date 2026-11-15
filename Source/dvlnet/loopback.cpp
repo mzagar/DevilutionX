@@ -24,9 +24,10 @@ bool loopback::SNetReceiveMessage(uint8_t *sender, void **data, size_t *size)
 {
 	if (message_queue.empty())
 		return false;
-	message_last = message_queue.front();
+	message_last = std::move(message_queue.front().payload);
+	message_sender = message_queue.front().sender;
 	message_queue.pop();
-	*sender = plr_single;
+	*sender = message_sender;
 	*size = message_last.size();
 	*data = message_last.data();
 	return true;
@@ -34,11 +35,17 @@ bool loopback::SNetReceiveMessage(uint8_t *sender, void **data, size_t *size)
 
 bool loopback::SNetSendMessage(uint8_t dest, void *data, size_t size)
 {
-	if (dest == plr_single) {
-		auto *rawMessage = reinterpret_cast<unsigned char *>(data);
-		const buffer_t message(rawMessage, rawMessage + size);
-		message_queue.push(message);
-	}
+	// Single-player semantics: only the local player's own messages are queued.
+	// Broadcasts (SNPLAYER_OTHERS) are carried by the global message buffers.
+	if (dest != plr_single)
+		return true;
+	return SNetSendMessageAs(plr_single, dest, data, size);
+}
+
+bool loopback::SNetSendMessageAs(uint8_t sender, uint8_t /*dest*/, void *data, size_t size)
+{
+	auto *rawMessage = reinterpret_cast<unsigned char *>(data);
+	message_queue.push({ sender, buffer_t(rawMessage, rawMessage + size) });
 	return true;
 }
 

@@ -116,6 +116,10 @@ typedef void (*SEVTHANDLER)(struct _SNETEVENT *);
  */
 bool SNetSendMessage(uint8_t playerID, void *data, size_t databytes);
 
+// Sends as an explicit local player (local co-op). Returns false when the active
+// provider cannot do that (any external transport).
+bool SNetSendMessageAs(uint8_t sender, uint8_t playerID, void *data, size_t databytes);
+
 // Macro values to target specific players
 constexpr uint8_t SNPLAYER_OTHERS = 0xFF;
 
