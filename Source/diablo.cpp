@@ -882,14 +882,25 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 	}
 }
 
-void RunGameLoop(interface_mode uMsg)
+} // namespace
+
+namespace {
+
+EventHandler GameLoopPreviousHandler = nullptr;
+#ifdef GPERF_HEAP_FIRST_GAME_ITERATION
+unsigned GameLoopIterationCount = 0;
+#endif
+
+} // namespace
+
+void GameLoopBegin(interface_mode uMsg)
 {
 	demo::NotifyGameLoopStart();
 
 	nthread_ignore_mutex(true);
 	StartGame(uMsg);
 	assert(HeadlessMode || ghMainWnd);
-	EventHandler previousHandler = SetEventHandler(GameEventHandler);
+	GameLoopPreviousHandler = SetEventHandler(GameEventHandler);
 	run_delta_info();
 	gbRunGame = true;
 	gbProcessPlayers = IsDiabloAlive(true);
@@ -905,71 +916,72 @@ void RunGameLoop(interface_mode uMsg)
 
 	discord_manager::StartGame();
 	lua::GameStart();
-#ifdef GPERF_HEAP_FIRST_GAME_ITERATION
-	unsigned run_game_iteration = 0;
-#endif
+}
 
-	while (gbRunGame) {
-
+bool GameLoopTick()
+{
 #ifdef _DEBUG
-		if (!gbGameLoopStartup && !DebugCmdsFromCommandLine.empty()) {
-			InitConsole();
-			for (const std::string &cmd : DebugCmdsFromCommandLine) {
-				RunInConsole(cmd);
-			}
-			DebugCmdsFromCommandLine.clear();
+	if (!gbGameLoopStartup && !DebugCmdsFromCommandLine.empty()) {
+		InitConsole();
+		for (const std::string &cmd : DebugCmdsFromCommandLine) {
+			RunInConsole(cmd);
 		}
+		DebugCmdsFromCommandLine.clear();
+	}
 #else
-		if (gbIsMultiplayer && IsAssetIntegrityViolated) {
-			app_fatal(_("Cannot play Multiplayer with overridden *.lua, *.tsv, or *.sol assets."));
-		}
+	if (gbIsMultiplayer && IsAssetIntegrityViolated) {
+		app_fatal(_("Cannot play Multiplayer with overridden *.lua, *.tsv, or *.sol assets."));
+	}
 #endif
 
-		SDL_Event event;
-		uint16_t modState;
-		while (FetchMessage(&event, &modState)) {
-			if (event.type == SDL_EVENT_QUIT) {
-				gbRunGameResult = false;
-				gbRunGame = false;
-				break;
-			}
-			HandleMessage(event, modState);
-		}
-		if (!gbRunGame)
+	SDL_Event event;
+	uint16_t modState;
+	while (FetchMessage(&event, &modState)) {
+		if (event.type == SDL_EVENT_QUIT) {
+			gbRunGameResult = false;
+			gbRunGame = false;
 			break;
+		}
+		HandleMessage(event, modState);
+	}
+	if (!gbRunGame)
+		return false;
 
-		bool drawGame = true;
-		bool processInput = true;
-		const bool runGameLoop = demo::IsRunning() ? demo::GetRunGameLoop(drawGame, processInput) : nthread_has_500ms_passed(&drawGame);
-		if (demo::IsRecording())
-			demo::RecordGameLoopResult(runGameLoop);
+	bool drawGame = true;
+	bool processInput = true;
+	const bool runGameLoop = demo::IsRunning() ? demo::GetRunGameLoop(drawGame, processInput) : nthread_has_500ms_passed(&drawGame);
+	if (demo::IsRecording())
+		demo::RecordGameLoopResult(runGameLoop);
 
-		discord_manager::UpdateGame();
+	discord_manager::UpdateGame();
 
-		if (!runGameLoop) {
-			if (processInput)
-				ProcessInput();
-			DvlNet_ProcessNetworkPackets();
-			if (!drawGame)
-				continue;
+	if (!runGameLoop) {
+		if (processInput)
+			ProcessInput();
+		DvlNet_ProcessNetworkPackets();
+		if (drawGame) {
 			RedrawViewport();
 			DrawAndBlit();
-			continue;
 		}
-
-		ProcessGameMessagePackets();
-		this_sdl_thread::yield();
-		if (game_loop(gbGameLoopStartup))
-			diablo_color_cyc_logic();
-		gbGameLoopStartup = false;
-		if (drawGame)
-			DrawAndBlit();
-#ifdef GPERF_HEAP_FIRST_GAME_ITERATION
-		if (run_game_iteration++ == 0)
-			HeapProfilerDump("first_game_iteration");
-#endif
+		return gbRunGame;
 	}
 
+	ProcessGameMessagePackets();
+	this_sdl_thread::yield();
+	if (game_loop(gbGameLoopStartup))
+		diablo_color_cyc_logic();
+	gbGameLoopStartup = false;
+	if (drawGame)
+		DrawAndBlit();
+#ifdef GPERF_HEAP_FIRST_GAME_ITERATION
+	if (GameLoopIterationCount++ == 0)
+		HeapProfilerDump("first_game_iteration");
+#endif
+	return gbRunGame;
+}
+
+void GameLoopEnd()
+{
 	demo::NotifyGameLoopEnd();
 
 	if (gbIsMultiplayer) {
@@ -982,14 +994,26 @@ void RunGameLoop(interface_mode uMsg)
 	ClearScreenBuffer();
 	RedrawEverything();
 	scrollrt_draw_game_screen();
-	previousHandler = SetEventHandler(previousHandler);
-	assert(HeadlessMode || previousHandler == GameEventHandler);
+	GameLoopPreviousHandler = SetEventHandler(GameLoopPreviousHandler);
+	assert(HeadlessMode || GameLoopPreviousHandler == GameEventHandler);
 	FreeGame();
 
 	if (cineflag) {
 		cineflag = false;
 		DoEnding();
 	}
+}
+
+namespace {
+
+void RunGameLoop(interface_mode uMsg)
+{
+	GameLoopBegin(uMsg);
+	while (gbRunGame) {
+		if (!GameLoopTick())
+			break;
+	}
+	GameLoopEnd();
 }
 
 void PrintWithRightPadding(std::string_view str, size_t width)

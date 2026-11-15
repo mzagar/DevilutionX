@@ -93,6 +93,24 @@ void InitKeymapActions();
 void SetCursorPos(Point position);
 void FreeGameMem();
 bool StartGame(bool bNewGame, bool bSinglePlayer);
+
+enum interface_mode : uint8_t;
+
+/**
+ * @brief Starts the real game session loop: everything RunGameLoop() does before ticking.
+ * @note Automation uses this with GameLoopTick() to drive the production loop with a fixed budget
+ * instead of waiting for user input.
+ */
+void GameLoopBegin(interface_mode uMsg);
+/**
+ * @brief Runs one iteration of the real game loop (hardware events, one logic tick, rendering).
+ * @return false when the loop should stop.
+ */
+bool GameLoopTick();
+/**
+ * @brief Tears down the game session loop: everything RunGameLoop() does after ticking.
+ */
+void GameLoopEnd();
 [[noreturn]] void diablo_quit(int exitStatus);
 int DiabloMain(int argc, char **argv);
 bool TryIconCurs();
