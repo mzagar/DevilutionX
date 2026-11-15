@@ -42,6 +42,10 @@ option(BUILD_TESTING "Build tests." ON)
 # No-UI network peer (test/network_peer.cpp) for TCP multiplayer bring-up and
 # regression testing. Independent of BUILD_TESTING so console builds can use it.
 option(BUILD_NETWORK_HARNESS "Build the no-UI network test peer." OFF)
+# No-UI local-session runner (test/local_session_runner.cpp) for split-screen
+# bring-up: it drives the production game loop with a bounded tick budget.
+# Independent of BUILD_TESTING so console builds can run scenarios.
+option(BUILD_LOCAL_SESSION_RUNNER "Build the no-UI local-session runner." OFF)
 
 # These must be included after the options above but before the `project` call.
 include(VcPkgManifestFeatures)
@@ -450,6 +454,10 @@ endif()
 
 if(BUILD_NETWORK_HARNESS)
   include(NetworkHarness)
+endif()
+
+if(BUILD_LOCAL_SESSION_RUNNER)
+  include(LocalSessionRunner)
 endif()
 
 include(functions/set_relative_file_macro)
