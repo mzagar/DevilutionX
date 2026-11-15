@@ -311,6 +311,52 @@ The resolved-paths section appears twice: once during `wiiu_init()` and once
 re-checked after `ApplicationInit()`. The file is **overwritten on every boot**,
 so read it before relaunching.
 
+## 🧩 Local split-screen: first gate (Cemu)
+
+Branch `wiiu-splitscreen`. This is *not* split screen yet: one client, one hero,
+no drawing. It is the foundation gate, and it passes on Cemu.
+
+- `RunGameLoop()` is split into `GameLoopBegin()` / `GameLoopTick()` /
+  `GameLoopEnd()`. Behaviour is unchanged; `timedemo_test` (the real loop with a
+  recorded demo) is the regression proof.
+- `local_session_runner` (`BUILD_LOCAL_SESSION_RUNNER=ON`, like the network
+  harness) boots the production path without menus: archives, options, Lua,
+  `NetInit`, new game, level load, then a fixed number of real logic ticks.
+  `--walk` submits a player action through `MakePlrPath()`, so a passing run
+  proves the action reached the simulation.
+- It writes JSONL (`BOOT`, `SESSION`, `CHECKPOINT`, `ACTION`, `MOVE_CHECK`,
+  `FINAL`, `RESULT`) to stdout and to `<pref>/local_session_result.jsonl`.
+- Fixed a real big-endian bug found on the way: `IsPItemValid()` decoded the
+  32-bit item `dwBuff` with `Swap16LE`, truncating flags on the Wii U.
+
+Reproduce the Cemu gate:
+
+```bash
+cmake -S . -B build-wiiu-net -DCMAKE_TOOLCHAIN_FILE=/opt/devkitpro/cmake/WiiU.cmake \
+  -DBUILD_NETWORK_HARNESS=ON -DBUILD_LOCAL_SESSION_RUNNER=ON
+make -C build-wiiu-net local_session_runner -j8
+tools/wiiu/package-local-session.sh
+tools/wiiu/cemu-run.sh build-wiiu-net/local_session_runner.wuhb
+cat "$HOME/Library/Application Support/Cemu/sdcard/wiiu/apps/devilutionx/runner/local_session_result.jsonl"
+```
+
+Expected last line: `{"tag":"RESULT","status":"PASS","ticks":50}`. The runner
+writes only under `sd:/wiiu/apps/devilutionx/runner/` and creates a disposable
+warrior there; it never touches the player's saves.
+
+Host-only equivalent (no Cemu):
+
+```bash
+cmake -S . -B build-split -DBUILD_TESTING=ON -DBUILD_LOCAL_SESSION_RUNNER=ON
+ninja -C build-split local_session_runner
+./build-split/local_session_runner --data-dir build-split/assets \
+  --pref-dir /tmp/lsr --create-hero warrior --ticks 60 --walk 4
+```
+
+Next on this branch: two client contexts and the in-memory transport, then the
+offscreen two-view compositor. The Cemu resource gate (2 and 4 contexts) comes
+before any HUD work.
+
 ## 🎯 Next task: finish network multiplayer parity
 
 **The goal is parity: the Wii U should do what every other platform already does**,
