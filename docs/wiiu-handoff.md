@@ -358,9 +358,16 @@ Adding joystick 1: WiiU Pro Controller #1
 
 Four seats boot too (`Seats=4`, `single_0..3.sv`); input with four pads is untested.
 
+Split screen (first pass): with `SplitScreen=1` in `local_coop.ini`, two seats get
+independent cameras composited side by side; the main panel stays seat 0's.
+Each side is the central half of a normal 640x352 view (cropped, not rescaled),
+so the field of view is narrower; per-seat panels/compact HUD are next.
+Verified in Cemu on 17 Nov 2026: two different town views in one frame.
+
 Known gaps at this milestone:
 
-- Shared camera (split screen is next); no independent travel.
+- Two-seat split only (`Seats=4` falls back to the shared camera); no independent
+  travel.
 - Seat 2 only walks and melee-attacks; pickups, doors, interact, spells, belt and
   the panels are still seat 0's.
 - The HUD belongs to the camera owner.
