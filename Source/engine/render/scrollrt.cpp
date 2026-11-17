@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <cstddef>
+#include <cstring>
 #include <cstdint>
 
 #ifdef USE_SDL3
@@ -15,6 +16,8 @@
 #include <SDL3/SDL_timer.h>
 #else
 #include <SDL.h>
+
+#include <vector>
 #endif
 
 #include <ankerl/unordered_dense.h>
@@ -51,6 +54,7 @@
 #include "lua/lua_event.hpp"
 #include "minitext.h"
 #include "missiles.h"
+#include "multi.h"
 #include "nthread.h"
 #include "options.h"
 #include "panels/charpanel.hpp"
@@ -1833,9 +1837,94 @@ void scrollrt_draw_game_screen()
 	RenderPresent();
 }
 
+namespace {
+
+/// Second 8-bit view surface for split-screen; shares the active palette.
+SDLSurfaceUniquePtr SplitViewSurface;
+
+SDL_Surface *GetSplitViewSurface()
+{
+	if (SplitViewSurface == nullptr || SplitViewSurface->w != gnScreenWidth || SplitViewSurface->h != gnScreenHeight) {
+		SplitViewSurface = SDLWrap::CreateRGBSurfaceWithFormat(
+		    /*flags=*/0, gnScreenWidth, gnScreenHeight, /*depth=*/8, SDL_PIXELFORMAT_INDEX8);
+		if (SDL_SetSurfacePalette(SplitViewSurface.get(), Palette.get()) < 0)
+			ErrSdl();
+	}
+	return SplitViewSurface.get();
+}
+
+void DrawWorldView(const Surface &out, Point startPosition)
+{
+	Displacement offset = {};
+	CalcFirstTilePosition(startPosition, offset);
+	DrawGame(out, startPosition, offset);
+}
+
+/**
+ * @brief Two-seat split screen: one world, one camera per seat, shared main panel.
+ *
+ * Each seat's world is rendered at the normal 640x352 viewport and the central
+ * half of each is composited side by side. The main panel stays seat 0's.
+ * This is the first split-screen milestone; per-seat panels and compact HUDs
+ * come next.
+ */
+void DrawSplitScreen()
+{
+	Surface out = GlobalBackBuffer();
+	UndrawCursor(out);
+
+	DrawWorldView(out, ViewPosition);
+
+	Player &secondPlayer = Players[1];
+	Player *const previousMyPlayer = MyPlayer;
+	MyPlayer = &secondPlayer;
+	Surface second(GetSplitViewSurface(), SDL_Rect { 0, 0, gnScreenWidth, gnScreenHeight });
+	DrawWorldView(second, secondPlayer.position.tile);
+	MyPlayer = previousMyPlayer;
+
+	// Central crop of each view, side by side. A row buffer avoids overwriting
+	// the source while both halves are copied into the same surface.
+	const int viewHeight = gnViewportHeight;
+	const int halfWidth = gnScreenWidth / 2;
+	const int cropX = (gnScreenWidth - halfWidth) / 2;
+	std::vector<uint8_t> row(static_cast<size_t>(halfWidth));
+	for (int y = 0; y < viewHeight; y++) {
+		std::memcpy(row.data(), out.at(cropX, y), static_cast<size_t>(halfWidth));
+		std::memcpy(out.at(0, y), row.data(), static_cast<size_t>(halfWidth));
+		std::memcpy(out.at(halfWidth, y), second.at(cropX, y), static_cast<size_t>(halfWidth));
+	}
+
+	DrawMainPanel(out);
+	DrawLifeFlaskLower(out, false);
+	DrawManaFlaskLower(out, false);
+	DrawSpell(out);
+	DrawMainPanelButtons(out);
+	DrawInvBelt(out);
+	DrawXPBar(out);
+	DrawCursor(out);
+	DrawFPS(out);
+	lua::GameDrawComplete();
+	RedrawComplete();
+	for (const PanelDrawComponent component : enum_values<PanelDrawComponent>()) {
+		if (IsRedrawComponent(component))
+			RedrawComponentComplete(component);
+	}
+
+	if (!RenderDirectlyToOutputSurface)
+		Blit(PalSurface, nullptr, nullptr);
+	RenderPresent();
+}
+
+} // namespace
+
 void DrawAndBlit()
 {
 	if (!gbRunGame || HeadlessMode) {
+		return;
+	}
+
+	if (gbLocalCoopSplitScreen && gbLocalCoopSeats == 2) {
+		DrawSplitScreen();
 		return;
 	}
 

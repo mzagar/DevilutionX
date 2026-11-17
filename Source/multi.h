@@ -50,6 +50,8 @@ extern uint8_t gbLocalCoopSeats;
 extern uint8_t gbLocalCoopSender;
 // Dev switch for automated console checks: skip the menu and start seat 0.
 extern bool gbLocalCoopAutoStart;
+// Split each local seat into its own viewport (shared panel) instead of one camera.
+extern bool gbLocalCoopSplitScreen;
 
 void SwapGameDataLE(GameData &gameData);
 std::string DescribeLeaveReason(leaveinfo_t leaveReason);

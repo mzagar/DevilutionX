@@ -79,6 +79,7 @@ bool IsLoopback;
 uint8_t gbLocalCoopSeats;
 uint8_t gbLocalCoopSender;
 bool gbLocalCoopAutoStart;
+bool gbLocalCoopSplitScreen;
 
 /**
  * Contains the set of supported event types supported by the multiplayer
@@ -571,6 +572,7 @@ void LoadLocalCoopSettings()
 {
 	gbLocalCoopSeats = 0;
 	gbLocalCoopAutoStart = false;
+	gbLocalCoopSplitScreen = false;
 
 	const std::string path = StrCat(paths::PrefPath(), "local_coop.ini");
 	FILE *file = OpenFile(path.c_str(), "rb");
@@ -605,8 +607,9 @@ void LoadLocalCoopSettings()
 	if (error == std::errc() && end == begin + seatsValue.size() && seats >= 2 && seats <= MAX_PLRS)
 		gbLocalCoopSeats = static_cast<uint8_t>(seats);
 	gbLocalCoopAutoStart = gbLocalCoopSeats != 0 && parsed->getBool("LocalCoop", "AutoStart", false);
+	gbLocalCoopSplitScreen = gbLocalCoopSeats != 0 && parsed->getBool("LocalCoop", "SplitScreen", true);
 	if (gbLocalCoopSeats != 0)
-		Log("Local co-op: {} seats (autostart={})", gbLocalCoopSeats, gbLocalCoopAutoStart);
+		Log("Local co-op: {} seats (autostart={}, split={})", gbLocalCoopSeats, gbLocalCoopAutoStart, gbLocalCoopSplitScreen);
 }
 
 bool InitLocalCoop(GameData *gameData, uint8_t seats)

@@ -13,6 +13,7 @@
 #endif
 
 #include "engine/surface.hpp"
+#include "utils/sdl_ptrs.h"
 
 namespace devilution {
 
@@ -20,6 +21,9 @@ namespace devilution {
 extern bool RenderDirectlyToOutputSurface;
 
 extern SDL_Surface *PalSurface;
+
+/** Currently active palette (shared by every 8-bit view surface). */
+extern SDLPaletteUniquePtr Palette;
 
 Surface GlobalBackBuffer();
 
