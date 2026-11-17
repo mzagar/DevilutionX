@@ -311,58 +311,87 @@ The resolved-paths section appears twice: once during `wiiu_init()` and once
 re-checked after `ApplicationInit()`. The file is **overwritten on every boot**,
 so read it before relaunching.
 
-## 🧩 Local split-screen: first gate (Cemu)
+## 🧩 Local co-op: playable (shared camera)
 
-Branch `wiiu-splitscreen`. This is *not* split screen yet: one client, one hero,
-no drawing. It is the foundation gate, and it passes on Cemu.
+Branch `wiiu-splitscreen`. **Two local players already play in one world on Cemu**
+with a shared camera. Split screen is the next milestone and is not implemented yet.
 
-- `RunGameLoop()` is split into `GameLoopBegin()` / `GameLoopTick()` /
-  `GameLoopEnd()`. Behaviour is unchanged; `timedemo_test` (the real loop with a
-  recorded demo) is the regression proof.
-- `local_session_runner` (`BUILD_LOCAL_SESSION_RUNNER=ON`, like the network
-  harness) boots the production path without menus: archives, options, Lua,
-  `NetInit`, new game, level load, then a fixed number of real logic ticks.
-  `--walk` submits a player action through `MakePlrPath()`, so a passing run
-  proves the action reached the simulation.
-- It writes JSONL (`BOOT`, `SESSION`, `CHECKPOINT`, `ACTION`, `MOVE_CHECK`,
-  `FINAL`, `RESULT`) to stdout and to `<pref>/local_session_result.jsonl`.
-- Fixed a real big-endian bug found on the way: `IsPItemValid()` decoded the
-  32-bit item `dwBuff` with `Swap16LE`, truncating flags on the Wii U.
+Status:
 
-Reproduce the Cemu gate:
+- `InitLocalCoop(seats)` starts a no-UI local session on the loopback provider:
+  one hero save per seat, seats placed on the town spawn table, single-player
+  rules (no turn worker), `gbActivePlayers = seats`.
+- Seat-owned commands: every logical packet is delivered once with the acting
+  seat as sender (`SNetSendMessageAs`), and the packet header describes the acting
+  player. Without the header fix seat 1 teleported to seat 0.
+- Input ownership: `InputSeats` (device instance ID -> seat, with generation) and
+  `SeatInput` (per-seat buttons and stick axes). Seat 0's legacy motion state is
+  only fed by seat 0's pad; `plrctrls_after_game_logic()` drives seats 1..N
+  through the production walk/attack path with the sender tag set per seat.
+- Console entry — `sd:/wiiu/apps/devilutionx/local_coop.ini`:
+
+  ```ini
+  [LocalCoop]
+  Seats=2
+  AutoStart=1   ; dev switch: skip the menu and start hero 0
+  ```
+
+  Seat N loads `single_N.sv` (or `spawn_N.sv` in shareware). Missing or invalid
+  values keep ordinary single-player behaviour; malformed values never abort.
+- `local_session_runner --seats N` proves N-seat sessions and per-seat movement
+  without UI, on host and on the console, via JSONL checkpoints per seat.
+
+Cemu check (verified 16 Nov 2026):
 
 ```bash
-cmake -S . -B build-wiiu-net -DCMAKE_TOOLCHAIN_FILE=/opt/devkitpro/cmake/WiiU.cmake \
-  -DBUILD_NETWORK_HARNESS=ON -DBUILD_LOCAL_SESSION_RUNNER=ON
-make -C build-wiiu-net local_session_runner -j8
+tools/wiiu/cemu-run.sh build-wiiu-release/devilutionx.wuhb
+```
+
+GamePad = seat 0. Add a **Wii U Pro Controller** as Cemu Player 2 -> seat 1 (hot-plug
+works). Log confirmation:
+
+```
+Local co-op: 2 seats (autostart=true)
+Local co-op session with 2 seats
+Adding joystick 1: WiiU Pro Controller #1
+```
+
+Four seats boot too (`Seats=4`, `single_0..3.sv`); input with four pads is untested.
+
+Known gaps at this milestone:
+
+- Shared camera (split screen is next); no independent travel.
+- Seat 2 only walks and melee-attacks; pickups, doors, interact, spells, belt and
+  the panels are still seat 0's.
+- The HUD belongs to the camera owner.
+
+Next: split-screen rendering (two cameras -> two logical views -> per-view palette
+-> one composite), then compact per-seat HUD, then four cells. The full plan is in
+[`wiiu-local-split-screen-implementation-handoff.md`](wiiu-local-split-screen-implementation-handoff.md).
+
+### Reproduce the runner gate (still useful)
+
+```bash
 tools/wiiu/package-local-session.sh
 tools/wiiu/cemu-run.sh build-wiiu-net/local_session_runner.wuhb
 cat "$HOME/Library/Application Support/Cemu/sdcard/wiiu/apps/devilutionx/runner/local_session_result.jsonl"
 ```
 
-Expected last line: `{"tag":"RESULT","status":"PASS","ticks":50}`. The runner
-writes only under `sd:/wiiu/apps/devilutionx/runner/` and creates a disposable
-warrior there; it never touches the player's saves.
-
-Host-only equivalent (no Cemu):
+Host-only, two seats, no Cemu:
 
 ```bash
 cmake -S . -B build-split -DBUILD_TESTING=ON -DBUILD_LOCAL_SESSION_RUNNER=ON
 ninja -C build-split local_session_runner
 ./build-split/local_session_runner --data-dir build-split/assets \
-  --pref-dir /tmp/lsr --create-hero warrior --ticks 60 --walk 4
+  --pref-dir /tmp/lsr --create-hero warrior --seats 2 --ticks 20 --walk 4
 ```
-
-Next on this branch: two client contexts and the in-memory transport, then the
-offscreen two-view compositor. The Cemu resource gate (2 and 4 contexts) comes
-before any HUD work.
 
 ## 🎯 Next task: finish network multiplayer parity
 
 **The goal is parity: the Wii U should do what every other platform already does**,
-before anything new is invented. Local split-screen co-op stays on the list for
-afterwards (a proposal exists in
-[`wiiu-local-multiplayer.md`](wiiu-local-multiplayer.md)).
+before anything new is invented. Local co-op is now its own track on branch
+`wiiu-splitscreen` (see above); the shared-camera build already plays with two
+local players, and split screen is the next milestone.
 
 ### Where it stands
 

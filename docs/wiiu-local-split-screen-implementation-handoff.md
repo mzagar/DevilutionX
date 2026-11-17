@@ -16,6 +16,33 @@ Prove production logic without manual UI interaction first. Test rendering offsc
 
 **Starting point:** The port owner reports working Wii U single-player, sound, and saves with full Diablo and Hellfire MPQs. That working port is not in this checkout. Preserve it and inspect its actual changes before integration.
 
+
+## Implementation status (branch `wiiu-splitscreen`, Nov 2026)
+
+The research phase is over; the first playable slice exists. The recommended
+multi-context architecture is **not** what shipped first. The branch took the
+cheaper shared-world route (the "restricted alternative" of §3.3) to get a
+playable build in Cemu early:
+
+- `InitLocalCoop(seats)` starts a no-UI local session on the loopback provider
+  with one hero save per seat, shared world, shared camera, single-player rules.
+- Commands from seat N are delivered locally with sender N
+  (`SNetSendMessageAs`) and the packet header describes the acting player, so the
+  engine applies each command to the right `Players[]` slot.
+- Per-seat input ownership: `InputSeats` (device instance ID -> seat, with
+  generation) and `SeatInput` (per-seat buttons/axes); seat 0 no longer reads
+  other pads' motion state. `plrctrls_after_game_logic()` drives seats 1..N
+  through the production walk/attack path.
+- Console switch: `<pref>/local_coop.ini` (`[LocalCoop] Seats=2..4`, optional
+  `AutoStart=1`).
+- Verified in Cemu: two players play together (GamePad + Wii U Pro Controller);
+  a four-seat session boots.
+
+Not done: split screen itself (shared camera), independent travel, per-seat HUD
+and panels, seat-aware pickups/doors/spells, and the multi-context isolation that
+independent levels require. The implementation sequence in §11 still applies for
+the remaining work; the render steps (§6) are next.
+
 ## Contents
 
 1. [Scope and decisions](#1-scope-and-decisions)
