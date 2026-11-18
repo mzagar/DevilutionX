@@ -384,8 +384,11 @@ Known gaps at this milestone:
   the panels are still seat 0's.
 - The HUD belongs to the camera owner.
 
-Next: split-screen rendering (two cameras -> two logical views -> per-view palette
--> one composite), then compact per-seat HUD, then four cells. The full plan is in
+Next: per-seat UI (status HUD, belt/spell/map, own panels), the
+`Multi Player -> Local Co-op` lobby, per-seat saves and a co-op save/load that
+resumes the session where it stopped, then real-hardware acceptance. The working
+plan and the acceptance checklist are in
+[`wiiu-local-coop-plan.md`](wiiu-local-coop-plan.md); the render research is in
 [`wiiu-local-split-screen-implementation-handoff.md`](wiiu-local-split-screen-implementation-handoff.md).
 
 ### Reproduce the runner gate (still useful)
