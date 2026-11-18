@@ -17,27 +17,49 @@ target; Cemu remains the fast loop.
   rules, no turn worker.
 - Seat-tagged commands (`SNetSendMessageAs`) and per-seat input ownership
   (`InputSeats`, `SeatInput`); each pad drives its own hero.
-- Split screen at the port's effective **853x480**: 2 side-by-side views or a
-  2x2 grid, rendered at their cell size with per-view geometry, shared panel,
-  per-seat name/HP/MP text.
-- `Settings -> Gameplay -> Local Co-op Players` selects 1–4 seats.
-- 4-seat sessions boot; 2-seat input is verified, 4-pad input is not.
+- **One complete client interface per seat.** Every seat renders its own
+  640x480 Diablo screen (world, main panel, flasks, belt, spell button, control
+  buttons, XP bar, inventory/character/spellbook/quest/stash overlays) into an
+  indexed canvas; the canvas is then scaled (aspect preserved) into that
+  seat's cell and composed into the presented frame. Players see exactly the
+  multiplayer client UI they would see on their own TV — not a shared panel.
+  `CalculatePanelAreas()` uses the canvas geometry while split screen is
+  active, so panel drawing and hit testing share that space.
+- Per-seat UI flags: automap, inventory, character, spellbook and quest log are
+  toggled per seat and rendered only into the owning seat's canvas. A pad that
+  belongs to seat 1+ never drives the shared seat-0 UI.
+- `Multi Player -> Local Co-op` lobby: seat count (2-4), a hero per seat (the
+  existing hero list, rejects nothing yet), split-screen toggle, Start/Cancel,
+  and resume of a saved co-op session. `Multi Player -> Online Multiplayer`
+  keeps the original provider dialog.
+- Per-seat saves: every seat writes its own `single_N.sv` on level change,
+  autosave, exit and cleanup; the world save goes into seat 0's archive once.
+- Co-op session descriptor (`local_coop_session.ini`): seat -> save mapping,
+  split flag; the lobby offers Resume and `StartGame(loadGame)` restores the
+  world.
+- 4-seat sessions boot and run in Cemu (2x2 grid). 2-seat input is verified,
+  4-pad input is not.
 
 ## Phases
 
-### A. Per-seat status HUD
-Compact per-view read-only HUD: HP/mana (globes or bars), belt contents, active
-spell, XP. Values come from `Players[seat]`; no input yet.
+### A. Per-seat status HUD — done differently
+Instead of a compact HUD the branch went straight to a full client interface
+per seat (see above), so there is no separate compact HUD to maintain.
 
-### B. Per-seat quick actions
-Belt use (heal/mana), spell selection, automap toggle per seat. Requires
-per-seat UI flags instead of the single global `invflag`/`AutomapActive`/etc.
+### B. Per-seat quick actions — done
+Belt use (heal/mana), spell cast, automap toggle and panel toggles act on the
+seat that pressed them (per-seat flags instead of the global
+`invflag`/`AutomapActive`/... for seats 1+).
 
-### C. Per-seat panels
-Inventory, character sheet, spellbook, quest log and stash inside the owning
-seat's view (compact) or as a seat-owned overlay; software cursor per seat and
-controller navigation. Mouse stays seat 0. A personal panel must not pause the
-other players.
+### C. Per-seat panels — partially done
+Inventory, character sheet, spellbook and quest log open inside the owning
+seat's canvas (full 320x352 side panels, correct art, correct data). Remaining:
+- **per-seat pointer/cursor**: only seat 0 has a cursor today, drawn inside its
+  own canvas with pointer input mapped from the physical frame. Seats 1+ see
+  their panels but cannot yet select inside them with their own pad; pad menu
+  navigation still moves the single global cursor.
+- stash/vendor interaction per seat.
+- mouse stays seat 0 (by design).
 
 ### D. Pause / menu policy
 Explicit session pause freezes all seats; controller loss handling; the Back
@@ -88,6 +110,9 @@ fixes at this gate (mappings, rumble, enumeration).
 
 ## Risks / open issues
 
+- **Per-seat pointer.** Panels render per seat but only seat 0 has a working
+  cursor. Each seat needs its own cursor position and its own hit testing in
+  canvas coordinates before panel interaction is complete for seats 1+.
 - **Seat-aware rules**: XP, item pickup/transfer, quests, vendors, death and
   resurrection still contain `MyPlayer`-centric paths. Audit before calling the
   co-op playable "complete".
@@ -96,5 +121,10 @@ fixes at this gate (mappings, rumble, enumeration).
   stock). Extend if not.
 - **720p**: setting `1280x720` in `diablo.ini` presents a white frame on this
   port; stay at the 853x480 window until that presentation bug is fixed.
-- **4 seats on hardware**: memory/frame budget and WPAD enumeration are unknown
-  until the hardware gate.
+- **Aspect at 853x480**: each seat is a 640x480 client screen on a 16:9 frame,
+  so 2-seat cells letterbox (426x319 inside 426x480) and 4-seat cells letterbox
+  to 320x240. Text stays 12px logical but is scaled down; the 4-seat grid is
+  legible but small on a TV.
+- **4 seats on hardware**: memory/frame budget (4 canvases are reused
+  sequentially, ~300 KB of scratch) and WPAD enumeration are unknown until the
+  hardware gate.
