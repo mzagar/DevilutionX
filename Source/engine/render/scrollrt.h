@@ -104,4 +104,10 @@ bool IsSplitScreenActive();
  */
 Point ScreenToSeatCanvas(Point screenPosition);
 
+/// Seat whose canvas contains a physical-screen point, or -1 when none does.
+int SeatForScreenPoint(Point screenPosition);
+
+/// Map a physical-screen point into a specific seat's canvas.
+Point ScreenToSeatCanvas(Point screenPosition, int seat);
+
 } // namespace devilution

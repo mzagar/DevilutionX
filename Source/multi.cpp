@@ -85,6 +85,7 @@ bool gbLocalCoopResume;
 uint32_t gbLocalCoopSaveSlot[4] = {};
 bool gbLocalCoopAutomapActive[4] = {};
 Point gbLocalCoopCursor[4] = {};
+int gbLocalCoopPointerSeat = 0;
 bool gbLocalCoopSpellSelect[4] = {};
 bool gbLocalCoopInvFlag[4] = {};
 bool gbLocalCoopCharFlag[4] = {};

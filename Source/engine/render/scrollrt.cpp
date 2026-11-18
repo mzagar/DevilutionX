@@ -2039,14 +2039,13 @@ void RenderSeatCanvas(int seat)
 
 	// Each seat has its own cursor inside its own canvas, so it is scaled and
 	// positioned together with the panel it points at. Seat 0 uses the pointer.
-	if (seat != 0) {
+	{
 		const Point savedCursor = MousePosition;
+		if (seat == 0 && gbLocalCoopPointerSeat == 0)
+			gbLocalCoopCursor[0] = MousePosition;
 		MousePosition = gbLocalCoopCursor[seat];
 		DrawCursor(canvas);
 		MousePosition = savedCursor;
-	} else {
-		gbLocalCoopCursor[0] = MousePosition;
-		DrawCursor(canvas);
 	}
 
 	RenderingSplitView = false;
@@ -2128,16 +2127,39 @@ bool IsSplitScreenActive()
 	return gbLocalCoopSplitSeatCount > 1;
 }
 
-Point ScreenToSeatCanvas(Point screenPosition)
+int SeatForScreenPoint(Point screenPosition)
+{
+	if (!IsSplitScreenActive())
+		return -1;
+	for (int seat = 0; seat < gbLocalCoopSplitSeatCount; seat++) {
+		const Rectangle &rect = SplitSeatCanvasRects[seat];
+		if (rect.size.width <= 0 || rect.size.height <= 0)
+			continue;
+		if (screenPosition.x >= rect.position.x && screenPosition.x < rect.position.x + rect.size.width
+		    && screenPosition.y >= rect.position.y && screenPosition.y < rect.position.y + rect.size.height)
+			return seat;
+	}
+	return -1;
+}
+
+Point ScreenToSeatCanvas(Point screenPosition, int seat)
 {
 	if (!IsSplitScreenActive())
 		return screenPosition;
-	const Rectangle &rect = SplitSeatCanvasRects[0];
+	if (seat < 0 || seat >= 4)
+		seat = 0;
+	const Rectangle &rect = SplitSeatCanvasRects[seat];
 	if (rect.size.width <= 0 || rect.size.height <= 0)
 		return screenPosition;
 	const int x = std::clamp((screenPosition.x - rect.position.x) * SeatCanvasSize.width / rect.size.width, 0, SeatCanvasSize.width - 1);
 	const int y = std::clamp((screenPosition.y - rect.position.y) * SeatCanvasSize.height / rect.size.height, 0, SeatCanvasSize.height - 1);
 	return { x, y };
+}
+
+Point ScreenToSeatCanvas(Point screenPosition)
+{
+	const int seat = SeatForScreenPoint(screenPosition);
+	return ScreenToSeatCanvas(screenPosition, seat < 0 ? 0 : seat);
 }
 
 void DrawAndBlit()

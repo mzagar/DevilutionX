@@ -64,6 +64,8 @@ extern uint32_t gbLocalCoopSaveSlot[4];
 extern bool gbLocalCoopAutomapActive[4];
 // Per-seat software cursor position inside that seat's 640x480 client canvas.
 extern Point gbLocalCoopCursor[4];
+// Seat whose canvas currently contains the physical pointer (-1 = none).
+extern int gbLocalCoopPointerSeat;
 extern bool gbLocalCoopSpellSelect[4];
 extern bool gbLocalCoopInvFlag[4];
 extern bool gbLocalCoopCharFlag[4];

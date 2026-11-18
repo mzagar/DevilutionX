@@ -688,6 +688,77 @@ void PressKey(SDL_Keycode vkey, uint16_t modState)
 	}
 }
 
+namespace {
+
+/**
+ * @brief Swaps in one local seat's player, panels and cursor for the duration of
+ *        a pointer event, so a click acts on the seat whose screen it landed on.
+ *
+ * Does nothing for seat 0 (the shared/default context) and outside local co-op.
+ */
+struct SeatUiContext {
+	explicit SeatUiContext(int seat)
+	    : seat_(seat)
+	{
+		if (seat_ <= 0 || gbLocalCoopSeats <= 1 || seat_ >= gbLocalCoopSeats || seat_ >= static_cast<int>(Players.size()))
+			return;
+		active_ = true;
+		savedCursor_ = MousePosition;
+		savedMyPlayer_ = MyPlayer;
+		savedMyPlayerId_ = MyPlayerId;
+		savedInspectPlayer_ = InspectPlayer;
+		savedInv_ = invflag;
+		savedChar_ = CharFlag;
+		savedBook_ = SpellbookFlag;
+		savedQuest_ = QuestLogIsOpen;
+		savedSender_ = gbLocalCoopSender;
+
+		MousePosition = gbLocalCoopCursor[seat_];
+		MyPlayer = &Players[seat_];
+		MyPlayerId = static_cast<uint8_t>(seat_);
+		InspectPlayer = MyPlayer;
+		invflag = gbLocalCoopInvFlag[seat_];
+		CharFlag = gbLocalCoopCharFlag[seat_];
+		SpellbookFlag = gbLocalCoopSpellbookFlag[seat_];
+		QuestLogIsOpen = gbLocalCoopQuestLogOpen[seat_];
+		gbLocalCoopSender = static_cast<uint8_t>(seat_);
+	}
+
+	~SeatUiContext()
+	{
+		if (!active_)
+			return;
+		gbLocalCoopCursor[seat_] = MousePosition;
+		MousePosition = savedCursor_;
+		MyPlayer = savedMyPlayer_;
+		MyPlayerId = savedMyPlayerId_;
+		InspectPlayer = savedInspectPlayer_;
+		invflag = savedInv_;
+		CharFlag = savedChar_;
+		SpellbookFlag = savedBook_;
+		QuestLogIsOpen = savedQuest_;
+		gbLocalCoopSender = savedSender_;
+	}
+
+	SeatUiContext(const SeatUiContext &) = delete;
+	SeatUiContext &operator=(const SeatUiContext &) = delete;
+
+private:
+	int seat_;
+	bool active_ = false;
+	Point savedCursor_ {};
+	Player *savedMyPlayer_ = nullptr;
+	uint8_t savedMyPlayerId_ = 0;
+	Player *savedInspectPlayer_ = nullptr;
+	bool savedInv_ = false;
+	bool savedChar_ = false;
+	bool savedBook_ = false;
+	bool savedQuest_ = false;
+	uint8_t savedSender_ = 0;
+};
+
+} // namespace
+
 void HandleMouseButtonDown(Uint8 button, uint16_t modState)
 {
 	if (IsPlayerInStore() && (button == SDL_BUTTON_X1
@@ -798,20 +869,34 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 	case SDL_EVENT_KEY_UP:
 		ReleaseKey(SDLC_EventKey(event));
 		return;
-	case SDL_EVENT_MOUSE_MOTION:
+	case SDL_EVENT_MOUSE_MOTION: {
 		if (ControlMode == ControlTypes::KeyboardAndMouse && invflag)
 			InvalidateInventorySlot();
-		MousePosition = ScreenToSeatCanvas({ SDLC_EventMotionIntX(event), SDLC_EventMotionIntY(event) });
+		const Point screenPosition { SDLC_EventMotionIntX(event), SDLC_EventMotionIntY(event) };
+		const int pointerSeat = SeatForScreenPoint(screenPosition);
+		gbLocalCoopPointerSeat = pointerSeat < 0 ? 0 : pointerSeat;
+		MousePosition = ScreenToSeatCanvas(screenPosition, gbLocalCoopPointerSeat);
 		gmenu_on_mouse_move();
 		return;
-	case SDL_EVENT_MOUSE_BUTTON_DOWN:
-		MousePosition = { SDLC_EventButtonIntX(event), SDLC_EventButtonIntY(event) };
+	}
+	case SDL_EVENT_MOUSE_BUTTON_DOWN: {
+		const Point screenPosition { SDLC_EventButtonIntX(event), SDLC_EventButtonIntY(event) };
+		const int pointerSeat = SeatForScreenPoint(screenPosition);
+		gbLocalCoopPointerSeat = pointerSeat < 0 ? 0 : pointerSeat;
+		MousePosition = ScreenToSeatCanvas(screenPosition, gbLocalCoopPointerSeat);
+		SeatUiContext seatContext(gbLocalCoopPointerSeat);
 		HandleMouseButtonDown(event.button.button, modState);
 		return;
-	case SDL_EVENT_MOUSE_BUTTON_UP:
-		MousePosition = { SDLC_EventButtonIntX(event), SDLC_EventButtonIntY(event) };
+	}
+	case SDL_EVENT_MOUSE_BUTTON_UP: {
+		const Point screenPosition { SDLC_EventButtonIntX(event), SDLC_EventButtonIntY(event) };
+		const int pointerSeat = SeatForScreenPoint(screenPosition);
+		gbLocalCoopPointerSeat = pointerSeat < 0 ? 0 : pointerSeat;
+		MousePosition = ScreenToSeatCanvas(screenPosition, gbLocalCoopPointerSeat);
+		SeatUiContext seatContext(gbLocalCoopPointerSeat);
 		HandleMouseButtonUp(event.button.button, modState);
 		return;
+	}
 #if SDL_VERSION_ATLEAST(2, 0, 0)
 	case SDL_EVENT_MOUSE_WHEEL:
 		if (SDLC_EventWheelIntY(event) > 0) { // Up
@@ -2718,7 +2803,11 @@ void InitPadmapActions()
 
 void SetCursorPos(Point position)
 {
-	if (ControlDevice != ControlTypes::KeyboardAndMouse) {
+	// Split screen: the logical UI space is one seat canvas, not the physical
+	// frame, so warping the OS pointer through LogicalToOutput() would move it to
+	// the wrong place and every following click would be off. Keep the logical
+	// cursor authoritative instead.
+	if (ControlDevice != ControlTypes::KeyboardAndMouse || IsSplitScreenActive()) {
 		MousePosition = position;
 		return;
 	}
