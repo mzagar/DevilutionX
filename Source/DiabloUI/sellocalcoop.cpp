@@ -37,6 +37,27 @@ uint32_t selcoop_saveNumbers[4] = {};
 std::vector<std::unique_ptr<UiItemBase>> vecSelCoopDialog;
 std::vector<std::unique_ptr<UiListItem>> vecSelCoopItems;
 
+enum class ModeChoice : int {
+	LocalCoop = 0,
+	Online = 1,
+};
+
+MultiPlayerMode selcoop_modeResult;
+
+void SelcoopModeSelect(size_t value)
+{
+	selcoop_modeResult = vecSelCoopItems[value]->m_value == static_cast<int>(ModeChoice::LocalCoop)
+	    ? MultiPlayerMode::LocalCoop
+	    : MultiPlayerMode::Online;
+	selcoop_endMenu = true;
+}
+
+void SelcoopModeEsc()
+{
+	selcoop_modeResult = MultiPlayerMode::Cancelled;
+	selcoop_endMenu = true;
+}
+
 void SelcoopFree()
 {
 	ArtBackground = std::nullopt;
@@ -105,6 +126,52 @@ bool SelcoopSelectSeats()
 }
 
 } // namespace
+
+MultiPlayerMode UiMultiPlayerModeDialog()
+{
+	selcoop_modeResult = MultiPlayerMode::Cancelled;
+	selcoop_endMenu = false;
+
+	selcoop_seats = 2;
+	LoadBackgroundArt("ui_art\\selconn");
+	UiAddBackground(&vecSelCoopDialog);
+	UiAddLogo(&vecSelCoopDialog);
+
+	const Point uiPosition = GetUIRectangle().position;
+
+	SDL_Rect rect = MakeSdlRect(uiPosition.x + 24, uiPosition.y + 161, 590, 35);
+	vecSelCoopDialog.push_back(std::make_unique<UiArtText>(
+	    _("Multi Player").data(), rect,
+	    UiFlags::AlignCenter | UiFlags::FontSize30 | UiFlags::ColorUiSilver, 3));
+
+	vecSelCoopItems.clear();
+	vecSelCoopItems.push_back(std::make_unique<UiListItem>(_("Local Co-op"), static_cast<int>(ModeChoice::LocalCoop)));
+	vecSelCoopItems.push_back(std::make_unique<UiListItem>(_("Online Multiplayer"), static_cast<int>(ModeChoice::Online)));
+
+	vecSelCoopDialog.push_back(std::make_unique<UiList>(
+	    vecSelCoopItems, 2, uiPosition.x + 265, uiPosition.y + 256,
+	    320, 30, UiFlags::AlignCenter | UiFlags::FontSize24 | UiFlags::ColorUiGold));
+
+	const SDL_Rect rectOk = MakeSdlRect(uiPosition.x + 239, uiPosition.y + 429, 120, 35);
+	vecSelCoopDialog.push_back(std::make_unique<UiArtTextButton>(
+	    _("OK"), &UiFocusNavigationSelect, rectOk,
+	    UiFlags::AlignCenter | UiFlags::FontSize30 | UiFlags::ColorUiGold));
+
+	const SDL_Rect rectCancel = MakeSdlRect(uiPosition.x + 489, uiPosition.y + 429, 144, 35);
+	vecSelCoopDialog.push_back(std::make_unique<UiArtTextButton>(
+	    _("Cancel"), &UiFocusNavigationEsc, rectCancel,
+	    UiFlags::AlignCenter | UiFlags::FontSize30 | UiFlags::ColorUiGold));
+
+	UiInitList(nullptr, SelcoopModeSelect, SelcoopModeEsc, vecSelCoopDialog, true);
+
+	while (!selcoop_endMenu) {
+		UiClearScreen();
+		UiPollAndRender();
+	}
+
+	SelcoopFree();
+	return selcoop_modeResult;
+}
 
 bool UiLocalCoopLobbyDialog()
 {

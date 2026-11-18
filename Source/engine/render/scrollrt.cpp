@@ -1459,7 +1459,10 @@ void DrawView(const Surface &out, Point startPosition)
 		DrawDiabloMsg(out.subregionY(0, out.h() - GetMainPanel().size.height));
 	}
 
-	DrawControllerModifierHints(out);
+	// The pad-navigation hints anchor off the shared main panel; inside a seat
+	// cell they would float over that seat's world view.
+	if (!RenderingSplitView)
+		DrawControllerModifierHints(out);
 	DrawPlrMsg(out);
 	gmenu_draw(out);
 	doom_draw(out);
@@ -1903,208 +1906,156 @@ void SetViewGeometry(Size viewSize)
 	gnViewportHeight = static_cast<uint16_t>(viewSize.height);
 }
 
-void RenderSeatView(const Surface &view, Player &player, Point startPosition, bool automapActive,
-    bool invFlag, bool charFlag, bool spellbookFlag, bool questLogOpen)
+/**
+ * @brief One seat's complete interface canvas (world + panel + overlays).
+ *
+ * Every local seat is drawn exactly like a standalone client: its own 640x480
+ * Diablo screen with that seat's main panel, flasks, belt, spell, XP bar and
+ * side-panel overlays. The canvas is then scaled into the seat's cell, so a
+ * split-screen player sees the same interface they would see on their own TV,
+ * only smaller.
+ */
+std::optional<OwnedSurface> SeatCanvas;
+
+constexpr Size SeatCanvasSize { 640, 480 };
+
+[[nodiscard]] bool EnsureSeatCanvas()
 {
-	const SavedViewGeometry saved = SaveViewGeometry();
-	SetViewGeometry({ view.w(), view.h() });
+	if (!SeatCanvas.has_value())
+		SeatCanvas.emplace(SeatCanvasSize);
+	return SeatCanvas.has_value();
+}
 
-	// Panel geometry for this seat's cell: no reserved panel band (the shared
-	// panel is drawn once for the whole frame), side panels as in-cell overlays.
+void ClearSurface(const Surface &out)
+{
+	for (int y = 0; y < out.h(); y++)
+		std::memset(out.at(0, y), 0, static_cast<size_t>(out.w()));
+}
+
+/// Nearest-neighbour paletted blit of the seat canvas into its cell rectangle.
+void BlitSeatCanvas(const Surface &src, const Surface &dst, Rectangle target)
+{
+	const int srcWidth = src.w();
+	const int srcHeight = src.h();
+	const int dstWidth = target.size.width;
+	const int dstHeight = target.size.height;
+	if (dstWidth <= 0 || dstHeight <= 0)
+		return;
+
+	for (int y = 0; y < dstHeight; y++) {
+		const uint8_t *srcRow = src.at(0, y * srcHeight / dstHeight);
+		uint8_t *dstRow = dst.at(target.position.x, target.position.y + y);
+		for (int x = 0; x < dstWidth; x++)
+			dstRow[x] = srcRow[x * srcWidth / dstWidth];
+	}
+}
+
+/// Aspect-preserving destination rectangle for the canvas inside a cell.
+[[nodiscard]] Rectangle FitSeatCanvas(const Rectangle &cell)
+{
+	const int cellWidth = cell.size.width;
+	const int cellHeight = cell.size.height;
+	if (static_cast<int64_t>(cellWidth) * SeatCanvasSize.height <= static_cast<int64_t>(cellHeight) * SeatCanvasSize.width) {
+		// Width-limited: the cell is taller than 4:3.
+		const int height = cellWidth * SeatCanvasSize.height / SeatCanvasSize.width;
+		return { { cell.position.x, cell.position.y + (cellHeight - height) / 2 }, { cellWidth, height } };
+	}
+	const int width = cellHeight * SeatCanvasSize.width / SeatCanvasSize.height;
+	return { { cell.position.x + (cellWidth - width) / 2, cell.position.y }, { width, cellHeight } };
+}
+
+/**
+ * @brief Render one local seat's full 640x480 interface into the seat canvas.
+ *
+ * This is the same production draw path a standalone client uses; only the
+ * target surface and the seat's player/flags/panel geometry differ.
+ */
+void RenderSeatCanvas(int seat)
+{
+	if (!EnsureSeatCanvas())
+		return;
+
+	Player &player = Players[seat];
+
+	const SavedViewGeometry savedView = SaveViewGeometry();
 	const SavedPanelAreas savedPanels = SavePanelAreas();
-	SetSeatPanelAreas({ view.w(), view.h() });
+	Player *const savedMyPlayer = MyPlayer;
+	Player *const savedInspectPlayer = InspectPlayer;
+	const uint8_t savedMyPlayerId = MyPlayerId;
+	const bool savedInv = invflag;
+	const bool savedChar = CharFlag;
+	const bool savedBook = SpellbookFlag;
+	const bool savedQuest = QuestLogIsOpen;
+	const bool savedAutomap = AutomapActive;
 
-	Player *const previousMyPlayer = MyPlayer;
 	MyPlayer = &player;
+	MyPlayerId = static_cast<uint8_t>(seat);
+	InspectPlayer = &player;
+	invflag = (seat == 0) ? savedInv : gbLocalCoopInvFlag[seat];
+	CharFlag = (seat == 0) ? savedChar : gbLocalCoopCharFlag[seat];
+	SpellbookFlag = (seat == 0) ? savedBook : gbLocalCoopSpellbookFlag[seat];
+	QuestLogIsOpen = (seat == 0) ? savedQuest : gbLocalCoopQuestLogOpen[seat];
+	AutomapActive = (seat == 0) ? savedAutomap : gbLocalCoopAutomapActive[seat];
 
-	// Override global UI flags with this seat's state
-	const bool savedInvFlag = invflag;
-	const bool savedCharFlag = CharFlag;
-	const bool savedSpellbookFlag = SpellbookFlag;
-	const bool savedQuestLogOpen = QuestLogIsOpen;
-	const bool savedAutomapActive = AutomapActive;
-	invflag = invFlag;
-	CharFlag = charFlag;
-	SpellbookFlag = spellbookFlag;
-	QuestLogIsOpen = questLogOpen;
-	AutomapActive = automapActive;
+	SetViewGeometry(SeatCanvasSize);
+	CalculatePanelAreas();
 
+	Surface &canvas = *SeatCanvas;
+	ClearSurface(canvas);
+
+	// Pad-navigation hints and the level-up button anchor off the shared main
+	// panel; they belong to the physical screen, not to a seat canvas.
 	RenderingSplitView = true;
-	Displacement offset = {};
-	CalcFirstTilePosition(startPosition, offset);
-	DrawGame(view, startPosition, offset);
+
+	const Point viewPosition = (seat == 0) ? Point { ViewPosition.x, ViewPosition.y } : Point { player.position.tile.x, player.position.tile.y };
+
+	DrawView(canvas, viewPosition);
+	DrawMainPanel(canvas);
+	DrawLifeFlaskLower(canvas, false);
+	DrawManaFlaskLower(canvas, false);
+	DrawSpell(canvas);
+	DrawMainPanelButtons(canvas);
+	DrawInvBelt(canvas);
+	DrawXPBar(canvas);
+
 	RenderingSplitView = false;
 
-	// Restore global flags
-	AutomapActive = savedAutomapActive;
-	invflag = savedInvFlag;
-	CharFlag = savedCharFlag;
-	SpellbookFlag = savedSpellbookFlag;
-	QuestLogIsOpen = savedQuestLogOpen;
-	MyPlayer = previousMyPlayer;
-
 	RestorePanelAreas(savedPanels);
-	RestoreViewGeometry(saved);
+	RestoreViewGeometry(savedView);
+	MyPlayer = savedMyPlayer;
+	InspectPlayer = savedInspectPlayer;
+	MyPlayerId = savedMyPlayerId;
+	invflag = savedInv;
+	CharFlag = savedChar;
+	SpellbookFlag = savedBook;
+	QuestLogIsOpen = savedQuest;
+	AutomapActive = savedAutomap;
 }
-
-/// Per-seat belt row: the owning seat's potions, drawn inside its own panel.
-void DrawSeatBelt(const Surface &out, const Player &player, Point origin)
-{
-	constexpr int SlotSize = 26;
-	constexpr int Gap = 2;
-
-	for (int i = 0; i < MaxBeltItems; i++) {
-		const Point position { origin.x + i * (SlotSize + Gap), origin.y };
-		InvDrawSlotBack(out, position, { SlotSize, SlotSize }, ITEM_QUALITY_NORMAL);
-		const Item &item = player.SpdList[i];
-		if (item.isEmpty())
-			continue;
-		const ClxSprite sprite = GetInvItemSprite(item._iCurs + CURSOR_FIRSTITEM);
-		DrawItem(item, out, position, sprite);
-	}
-}
-
-/// Height of the compact per-seat panel inside a cell.
-int SeatPanelHeight(const Rectangle &cell)
-{
-	// Enough for the belt row, two resource bars and the XP line; smaller cells
-	// (four seats) get the slim variant without the numeric readouts.
-	return cell.size.height >= 320 ? 96 : 72;
-}
-
-constexpr int SeatBeltSlot = 26;
-constexpr int SeatBeltGap = 2;
-constexpr int SeatBeltWidth = MaxBeltItems * SeatBeltSlot + (MaxBeltItems - 1) * SeatBeltGap;
 
 /**
- * @brief Compact per-seat panel: that seat's flasks, belt, spell and XP.
+ * @brief Split the screen into one complete player screen per local seat.
  *
- * Each seat owns a complete "player screen": this panel is drawn inside the
- * seat's own cell from that seat's Player, so two players never share potions,
- * spell or experience readouts.
- */
-void DrawSeatPanel(const Surface &out, const Player &player, const Rectangle &cell, int panelHeight)
-{
-	const Rectangle panel {
-		{ cell.position.x, cell.position.y + cell.size.height - panelHeight },
-		{ cell.size.width, panelHeight }
-	};
-	const bool withNumbers = panelHeight >= 88;
-
-	// Panel background and a thin gold separator against the world view.
-	FillRect(out, panel.position.x, panel.position.y, panel.size.width, panel.size.height, 0);
-	FillRect(out, panel.position.x, panel.position.y, panel.size.width, 1, PAL16_BEIGE + 2);
-
-	constexpr int BarWidth = 70;
-	constexpr int BarHeight = 8;
-	const int barsX = panel.position.x + 6;
-	const auto drawBar = [&](int y, int value, int max, uint8_t color) {
-		FillRect(out, barsX, y, BarWidth, BarHeight, PAL16_GRAY + 8);
-		if (max <= 0)
-			return;
-		const int filled = std::clamp(value, 0, max) * BarWidth / max;
-		if (filled > 0)
-			FillRect(out, barsX, y, filled, BarHeight, color);
-	};
-
-	int barY = panel.position.y + (withNumbers ? 12 : 8);
-	drawBar(barY, player._pHitPoints.whole(), player._pMaxHP.whole(), PAL8_RED + 4);
-	if (withNumbers) {
-		DrawString(out, StrCat(player._pHitPoints.whole(), "/", player._pMaxHP.whole()),
-		    Rectangle { { barsX, barY + BarHeight + 1 }, { BarWidth, 12 } },
-		    { .flags = UiFlags::ColorRed | UiFlags::AlignCenter });
-	}
-	barY += withNumbers ? 34 : 16;
-	drawBar(barY, player._pMana.whole(), player._pMaxMana.whole(), PAL8_BLUE + 3);
-	if (withNumbers) {
-		DrawString(out, StrCat(player._pMana.whole(), "/", player._pMaxMana.whole()),
-		    Rectangle { { barsX, barY + BarHeight + 1 }, { BarWidth, 12 } },
-		    { .flags = UiFlags::ColorBlue | UiFlags::AlignCenter });
-	}
-
-	// Belt: centred in the panel, from this seat's own belt slots.
-	const int beltX = panel.position.x + (panel.size.width - SeatBeltWidth) / 2;
-	const int beltY = panel.position.y + (withNumbers ? 10 : 6);
-	DrawSeatBelt(out, player, { beltX, beltY });
-
-	// Active spell icon on the right.
-	constexpr int IconBox = 30;
-	const int iconX = panel.position.x + panel.size.width - IconBox - 6;
-	const int iconY = beltY;
-	FillRect(out, iconX, iconY, IconBox, IconBox, PAL16_GRAY + 4);
-	if (IsValidSpell(player._pRSpell)) {
-		DrawSmallSpellIcon(out, { iconX + 1, iconY + 1 }, player._pRSpell);
-	}
-
-	// Experience bar along the bottom edge.
-	constexpr int XpHeight = 5;
-	const int xpY = panel.position.y + panel.size.height - XpHeight - 2;
-	const int xpWidth = panel.size.width - 12;
-	FillRect(out, panel.position.x + 6, xpY, xpWidth, XpHeight, PAL16_GRAY + 8);
-	const uint8_t charLevel = player.getCharacterLevel();
-	const uint64_t prevXp = GetNextExperienceThresholdForLevel(charLevel - 1);
-	const uint64_t nextXp = GetNextExperienceThresholdForLevel(charLevel);
-	if (player.isMaxCharacterLevel()) {
-		FillRect(out, panel.position.x + 6, xpY, xpWidth, XpHeight, PAL8_YELLOW + 4);
-	} else if (nextXp > prevXp && player._pExperience >= prevXp) {
-		const auto filled = static_cast<int>(static_cast<uint64_t>(xpWidth) * (player._pExperience - prevXp) / (nextXp - prevXp));
-		if (filled > 0)
-			FillRect(out, panel.position.x + 6, xpY, filled, XpHeight, PAL16_BEIGE + 10);
-	}
-}
-
-/// Per-seat name tag, so a player can tell which view is theirs.
-void DrawSeatHud(const Surface &out, const Player &player, const Rectangle &cell)
-{
-	DrawString(out, player._pName, { cell.position.x + 4, cell.position.y + 4 }, { .flags = UiFlags::ColorWhite });
-}
-
-/**
- * @brief Split each local seat into its own viewport, with the shared main panel.
-/**
- * @brief Split the screen into one self-contained "player screen" per seat.
- *
- * Each cell is the seat's own world view plus its own compact panel (flasks,
- * belt, spell, XP). Nothing is shared: no global bottom panel, so two players
- * never see the same potions. Views are rendered at cell size with a local copy
- * of the viewport geometry, so no cropping or rescaling is involved.
+ * Each seat renders its own 640x480 interface (world, main panel, flasks, belt,
+ * spell, XP, side panels) and that canvas is scaled into the seat's cell. This
+ * is a full multiplayer client UI per player, sharing only the physical display
+ * and the simulation.
  */
 void DrawSplitScreen()
 {
 	Surface out = GlobalBackBuffer();
-	// No reserved panel band: the panel lives inside each cell.
+	UndrawCursor(out);
+	FillRect(out, 0, 0, gnScreenWidth, gnScreenHeight, 0);
+
+	if (!EnsureSeatCanvas())
+		return;
+
 	const ViewLayout layout = CalculateViewLayout({ gnScreenWidth, gnScreenHeight }, gbLocalCoopSeats, 0);
 	const int seatCount = std::min<int>(gbLocalCoopSeats, static_cast<int>(layout.cells.size()));
 
-	UndrawCursor(out);
-	// Unused cells (three seats) and cell borders must not keep stale pixels.
-	FillRect(out, 0, 0, gnScreenWidth, gnScreenHeight, 0);
-
 	for (int seat = 0; seat < seatCount; seat++) {
 		const Rectangle &cell = layout.cells[seat];
-		Player &player = Players[seat];
-		const int panelHeight = SeatPanelHeight(cell);
-		const int viewHeight = std::max(0, cell.size.height - panelHeight);
-		const Point startPosition = seat == 0
-		    ? Point { ViewPosition.x, ViewPosition.y }
-		    : Point { player.position.tile.x, player.position.tile.y };
-		const Surface view = out.subregion(cell.position.x, cell.position.y, cell.size.width, viewHeight);
-		const bool seatAutomap = (seat == 0) ? AutomapActive : gbLocalCoopAutomapActive[seat];
-		// A 320x352 side panel only fits a cell at least that tall. In shorter
-		// cells an overlay would draw past the subregion into its neighbour, so
-		// the seat keeps playing without its panel until compact overlays land.
-		const bool panelsFit = viewHeight >= SidePanelSize.height;
-		RenderSeatView(view, player, startPosition, seatAutomap,
-		    panelsFit && ((seat == 0) ? invflag : gbLocalCoopInvFlag[seat]),
-		    panelsFit && ((seat == 0) ? CharFlag : gbLocalCoopCharFlag[seat]),
-		    panelsFit && ((seat == 0) ? SpellbookFlag : gbLocalCoopSpellbookFlag[seat]),
-		    panelsFit && ((seat == 0) ? QuestLogIsOpen : gbLocalCoopQuestLogOpen[seat]));
-	}
-
-	for (int seat = 0; seat < seatCount; seat++) {
-		const Rectangle &cell = layout.cells[seat];
-		DrawSeatHud(out, Players[seat], cell);
-		DrawSeatPanel(out, Players[seat], cell, SeatPanelHeight(cell));
+		RenderSeatCanvas(seat);
+		BlitSeatCanvas(*SeatCanvas, out, FitSeatCanvas(cell));
 	}
 
 	// Cell separators so the split is unambiguous on a TV.
@@ -2117,6 +2068,8 @@ void DrawSplitScreen()
 		FillRect(out, 0, layout.viewport.height / 2, gnScreenWidth, 1, PAL16_BEIGE + 2);
 	}
 
+	// The mouse belongs to the physical screen (seat 0); the seats themselves are
+	// already composed.
 	DrawCursor(out);
 	DrawFPS(out);
 	lua::GameDrawComplete();

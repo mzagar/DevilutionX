@@ -87,15 +87,6 @@ struct SavedPanelAreas {
 };
 SavedPanelAreas SavePanelAreas();
 void RestorePanelAreas(const SavedPanelAreas &saved);
-/**
- * @brief Panel geometry for one local seat's split-screen cell.
- *
- * Unlike CalculatePanelAreas() this does not reserve the bottom panel band: in
- * split screen the shared main panel is drawn once for the whole frame, so the
- * seat's cell is entirely available for that seat's world view. Side panels
- * become an in-cell overlay (inventory/spellbook right, stash/quest left).
- */
-void SetSeatPanelAreas(Size cellSize);
 void ToggleCharPanel();
 
 /**

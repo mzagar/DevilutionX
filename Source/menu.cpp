@@ -188,18 +188,21 @@ void mainmenu_loop()
 			if (!InitSinglePlayerMenu())
 				done = true;
 			break;
-		case MAINMENU_MULTIPLAYER:
-			if (!InitMultiPlayerMenu())
-				done = true;
-			break;
-		case MAINMENU_LOCAL_COOP:
-			if (UiLocalCoopLobbyDialog()) {
-				// gbLocalCoopResume is set by the lobby when resuming a saved session
-				if (!StartGame(!gbLocalCoopResume, true))
+		case MAINMENU_MULTIPLAYER: {
+			const MultiPlayerMode mode = UiMultiPlayerModeDialog();
+			if (mode == MultiPlayerMode::LocalCoop) {
+				if (UiLocalCoopLobbyDialog()) {
+					// gbLocalCoopResume is set by the lobby when resuming a saved session
+					if (!StartGame(!gbLocalCoopResume, true))
+						done = true;
+					gbLocalCoopResume = false; // reset for next lobby visit
+				}
+			} else if (mode == MultiPlayerMode::Online) {
+				if (!InitMultiPlayerMenu())
 					done = true;
-				gbLocalCoopResume = false; // reset for next lobby visit
 			}
 			break;
+		}
 		case MAINMENU_ATTRACT_MODE:
 			if (gbIsSpawn && !HaveIntro())
 				done = false;

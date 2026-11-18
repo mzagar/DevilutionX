@@ -251,23 +251,6 @@ void RestorePanelAreas(const SavedPanelAreas &saved)
 	gnViewportHeight = saved.viewportHeight;
 }
 
-void SetSeatPanelAreas(Size cellSize)
-{
-	constexpr Size MainPanelSize { 640, 128 };
-
-	// The shared main panel is drawn once per frame, outside the seat views, so a
-	// seat's cell is fully available for its world view (no reserved panel band).
-	MainPanel = {
-		{ (cellSize.width - MainPanelSize.width) / 2, cellSize.height - MainPanelSize.height },
-		MainPanelSize
-	};
-	// Side panels are seat-owned overlays: they open inside the owning seat's
-	// viewport instead of the shared 640-wide layout.
-	LeftPanel = { { 0, 0 }, SidePanelSize };
-	RightPanel = { { std::max(0, cellSize.width - SidePanelSize.width), 0 }, SidePanelSize };
-	gnViewportHeight = static_cast<uint16_t>(cellSize.height);
-}
-
 void CalculatePanelAreas()
 {
 	constexpr Size MainPanelSize { 640, 128 };
