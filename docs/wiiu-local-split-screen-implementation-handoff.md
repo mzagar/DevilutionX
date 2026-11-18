@@ -38,16 +38,19 @@ playable build in Cemu early:
 - Verified in Cemu: two players play together (GamePad + Wii U Pro Controller);
   a four-seat session boots.
 
-Split screen now exists as a first pass: with `SplitScreen=1`, two seats render
-independent cameras into one frame (central half of each 640x352 view composed
-side by side, shared main panel). Verified in Cemu on 17 Nov 2026.
+Split screen now exists: `SplitScreen=1` gives each seat its own viewport and
+camera. `CalculateViewLayout` (pure, tested) splits the viewport into one, two or
+a 2x2 grid of cells with the shared 640-wide main panel centred at the bottom;
+each seat renders at its cell size with a local copy of the viewport geometry
+(§6.2), so there is no cropping or rescaling. Verified in Cemu on 17 Nov 2026 at
+1280x720 (2 seats: 640x592 cells; 4 seats: 640x296 cells).
 
-Not done: proper per-view geometry and compact HUDs (the first pass crops instead
-of giving each seat a full-width view; the panel is seat 0's), four-cell layout
-(four seats fall back to the shared camera), independent travel, per-seat panels,
-seat-aware pickups/doors/spells, and the multi-context isolation that independent
-levels require. The next step is the §6.2/§6.4 layout work: a 1280x720 logical
-frame with one full 640x592 view per seat, then compact per-seat HUDs.
+Not done: compact per-seat HUDs and panels (there is only a name + HP/MP text
+placeholder per view; the main panel and inventories are seat 0's), per-seat
+vision/palette isolation in dungeons, independent travel, seat-aware
+pickups/doors/spells, and the multi-context isolation that independent levels
+require. The next step is §6.4: compact HUD geometry per cell and per-seat local
+panels, then the remaining §5 seat actions.
 
 ## Contents
 

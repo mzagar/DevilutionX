@@ -358,11 +358,17 @@ Adding joystick 1: WiiU Pro Controller #1
 
 Four seats boot too (`Seats=4`, `single_0..3.sv`); input with four pads is untested.
 
-Split screen (first pass): with `SplitScreen=1` in `local_coop.ini`, two seats get
-independent cameras composited side by side; the main panel stays seat 0's.
-Each side is the central half of a normal 640x352 view (cropped, not rescaled),
-so the field of view is narrower; per-seat panels/compact HUD are next.
-Verified in Cemu on 17 Nov 2026: two different town views in one frame.
+Split screen: with `SplitScreen=1` in `local_coop.ini` each seat gets its own
+viewport and camera. Views render at their cell size with a local copy of the
+viewport geometry (no crop, no rescale): two seats side by side, three/four in a
+2x2 grid, with the shared 640-wide main panel centred at the bottom. Each view also
+gets a small name + HP/MP text overlay as a placeholder until per-seat panels exist.
+The layout is chosen from the runtime resolution, so it also works at 640x480
+(narrower cells); **1280x720 is recommended** for co-op and is what the SD card is
+currently set to (`[Graphics] Width=1280 Height=720`). Split is disabled with
+`Graphics.zoom`, which assumes 1:1 pixels.
+Verified in Cemu on 17 Nov 2026: 2 seats (cells 640x592) and 4 seats (2x2 cells
+640x296) boot and render.
 
 Known gaps at this milestone:
 
