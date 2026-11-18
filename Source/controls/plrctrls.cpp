@@ -2297,7 +2297,8 @@ struct PerSeatButtons {
 	bool leftStick;
 	bool leftShoulder;
 	bool rightShoulder;
-	bool buttonA;
+	bool buttonB;
+	bool buttonX;
 };
 std::array<PerSeatButtons, 4> prevSeatButtons = {};
 } // namespace
@@ -2316,28 +2317,43 @@ void plrctrls_after_game_logic()
 
 		const uint8_t previousSender = gbLocalCoopSender;
 		gbLocalCoopSender = seat;
+		Player *const previousMyPlayer = MyPlayer;
+		MyPlayer = &player;
 
-		// --- Movement & attack (existing) ---
+		// --- Movement ---
 		const AxisDirection dir = GetLeftStickOrDpadDirectionForSeat(seat, /*usePadmapper=*/false);
 		WalkInDir(player, dir);
-		if (IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_A)) {
+
+		PerSeatButtons &prev = prevSeatButtons[seat];
+
+		// --- Attack on B (matching padmapper PrimaryAction) ---
+		const bool nowB = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_B);
+		if (nowB) {
 			const Direction pdir = (dir.x == AxisDirectionX_NONE && dir.y == AxisDirectionY_NONE)
 			    ? player._pdir
 			    : FaceDir[static_cast<std::size_t>(dir.x)][static_cast<std::size_t>(dir.y)];
 			NetSendCmdLoc(seat, true, player.UsesRangedWeapon() ? CMD_RATTACKXY : CMD_SATTACKXY, player.position.future + pdir);
 		}
+		prev.buttonB = nowB;
 
-		// --- Per-seat quick actions (Phase B) ---
-		PerSeatButtons &prev = prevSeatButtons[seat];
+		// --- Spell cast on X (rising edge, matching padmapper SpellAction) ---
+		const bool nowX = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_X);
+		if (nowX && !prev.buttonX) {
+			const uint8_t previousMyPlayerId = MyPlayerId;
+			MyPlayerId = seat;
+			CheckPlrSpell(false);
+			MyPlayerId = previousMyPlayerId;
+		}
+		prev.buttonX = nowX;
 
-		// Automap toggle on left-stick click (rising edge)
+		// --- Automap toggle on left-stick click (rising edge) ---
 		const bool nowLeftStick = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_LEFTSTICK);
 		if (nowLeftStick && !prev.leftStick) {
 			gbLocalCoopAutomapActive[seat] = !gbLocalCoopAutomapActive[seat];
 		}
 		prev.leftStick = nowLeftStick;
 
-		// Belt use on shoulder buttons (rising edge)
+		// --- Belt use on shoulder buttons (rising edge) ---
 		const bool nowLeftShoulder = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_LEFTSHOULDER);
 		if (nowLeftShoulder && !prev.leftShoulder) {
 			UseBeltItem(player, BeltItemType::Healing);
@@ -2350,6 +2366,7 @@ void plrctrls_after_game_logic()
 		}
 		prev.rightShoulder = nowRightShoulder;
 
+		MyPlayer = previousMyPlayer;
 		gbLocalCoopSender = previousSender;
 	}
 }
