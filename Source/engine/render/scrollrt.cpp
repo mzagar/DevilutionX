@@ -38,8 +38,10 @@
 #include "engine/render/clx_render.hpp"
 #include "engine/render/dun_render.hpp"
 #include "engine/render/light_render.hpp"
+#include "engine/render/primitive_render.hpp"
 #include "engine/render/view_layout.hpp"
 #include "engine/render/text_render.hpp"
+#include "engine/palette.h"
 #include "engine/trn.hpp"
 #include "engine/world_tile.hpp"
 #include "game_mode.hpp"
@@ -1915,14 +1917,28 @@ void RenderSeatView(const Surface &view, Player &player, Point startPosition)
 	RestoreViewGeometry(saved);
 }
 
-/// Minimal per-seat HUD: name and the two resource pools, until per-seat panels exist.
+/// Per-seat status HUD: name, HP/MP values and compact resource bars.
 void DrawSeatHud(const Surface &out, const Player &player, const Rectangle &cell)
 {
+	const Point origin { cell.position.x + 4, cell.position.y + 4 };
 	const std::string text = StrCat(
 	    player._pName, "  ",
 	    player._pHitPoints.whole(), "/", player._pMaxHP.whole(),
 	    "  ", player._pMana.whole(), "/", player._pMaxMana.whole());
-	DrawString(out, text, { cell.position.x + 4, cell.position.y + 4 }, { .flags = UiFlags::ColorWhite });
+	DrawString(out, text, origin, { .flags = UiFlags::ColorWhite });
+
+	constexpr int BarWidth = 80;
+	constexpr int BarHeight = 5;
+	const auto drawBar = [&](int y, int value, int max, uint8_t color) {
+		FillRect(out, origin.x, y, BarWidth, BarHeight, 0);
+		if (max <= 0)
+			return;
+		const int filled = std::clamp(value, 0, max) * BarWidth / max;
+		if (filled > 0)
+			FillRect(out, origin.x, y, filled, BarHeight, color);
+	};
+	drawBar(origin.y + 16, player._pHitPoints.whole(), player._pMaxHP.whole(), PAL8_RED + 4);
+	drawBar(origin.y + 22, player._pMana.whole(), player._pMaxMana.whole(), PAL8_BLUE + 3);
 }
 
 /**
@@ -1946,6 +1962,9 @@ void DrawSplitScreen()
 		const Point startPosition = seat == 0
 		    ? Point { ViewPosition.x, ViewPosition.y }
 		    : Point { player.position.tile.x, player.position.tile.y };
+		// The isometric grid does not cover every pixel of the rectangular cell;
+		// clear it first so the uncovered edges are black instead of stale pixels.
+		FillRect(out, cell.position.x, cell.position.y, cell.size.width, cell.size.height, 0);
 		const Surface view = out.subregion(cell.position.x, cell.position.y, cell.size.width, cell.size.height);
 		RenderSeatView(view, player, startPosition);
 	}
