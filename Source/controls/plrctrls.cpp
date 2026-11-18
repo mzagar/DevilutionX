@@ -2299,6 +2299,8 @@ struct PerSeatButtons {
 	bool rightShoulder;
 	bool buttonB;
 	bool buttonX;
+	bool leftTrigger;
+	bool rightTrigger;
 };
 std::array<PerSeatButtons, 4> prevSeatButtons = {};
 } // namespace
@@ -2365,6 +2367,28 @@ void plrctrls_after_game_logic()
 			UseBeltItem(player, BeltItemType::Mana);
 		}
 		prev.rightShoulder = nowRightShoulder;
+
+		// --- Character sheet toggle on left trigger (rising edge) ---
+		const bool nowLeftTrigger = IsControllerButtonPressedOnSeat(seat, ControllerButton_AXIS_TRIGGERLEFT);
+		if (nowLeftTrigger && !prev.leftTrigger) {
+			gbLocalCoopCharFlag[seat] = !gbLocalCoopCharFlag[seat];
+			if (gbLocalCoopCharFlag[seat])
+				gbLocalCoopQuestLogOpen[seat] = false;
+		}
+		prev.leftTrigger = nowLeftTrigger;
+
+		// --- Inventory toggle on right trigger (rising edge) ---
+		const bool nowRightTrigger = IsControllerButtonPressedOnSeat(seat, ControllerButton_AXIS_TRIGGERRIGHT);
+		if (nowRightTrigger && !prev.rightTrigger) {
+			if (gbLocalCoopInvFlag[seat]) {
+				gbLocalCoopInvFlag[seat] = false;
+				gbLocalCoopSpellbookFlag[seat] = false;
+			} else {
+				gbLocalCoopInvFlag[seat] = true;
+				gbLocalCoopSpellbookFlag[seat] = false;
+			}
+		}
+		prev.rightTrigger = nowRightTrigger;
 
 		MyPlayer = previousMyPlayer;
 		gbLocalCoopSender = previousSender;

@@ -83,6 +83,10 @@ bool gbLocalCoopAutoStart;
 bool gbLocalCoopSplitScreen;
 bool gbLocalCoopAutomapActive[4] = {};
 bool gbLocalCoopSpellSelect[4] = {};
+bool gbLocalCoopInvFlag[4] = {};
+bool gbLocalCoopCharFlag[4] = {};
+bool gbLocalCoopSpellbookFlag[4] = {};
+bool gbLocalCoopQuestLogOpen[4] = {};
 
 /**
  * Contains the set of supported event types supported by the multiplayer

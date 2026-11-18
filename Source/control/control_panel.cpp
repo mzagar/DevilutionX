@@ -238,6 +238,19 @@ bool IsLevelUpButtonVisible()
 
 } // namespace
 
+SavedPanelAreas SavePanelAreas()
+{
+	return { MainPanel, LeftPanel, RightPanel, gnViewportHeight };
+}
+
+void RestorePanelAreas(const SavedPanelAreas &saved)
+{
+	MainPanel = saved.mainPanel;
+	LeftPanel = saved.leftPanel;
+	RightPanel = saved.rightPanel;
+	gnViewportHeight = saved.viewportHeight;
+}
+
 void CalculatePanelAreas()
 {
 	constexpr Size MainPanelSize { 640, 128 };

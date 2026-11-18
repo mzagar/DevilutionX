@@ -58,6 +58,10 @@ extern bool gbLocalCoopSplitScreen;
 // so one player's UI never affects another's.
 extern bool gbLocalCoopAutomapActive[4];
 extern bool gbLocalCoopSpellSelect[4];
+extern bool gbLocalCoopInvFlag[4];
+extern bool gbLocalCoopCharFlag[4];
+extern bool gbLocalCoopSpellbookFlag[4];
+extern bool gbLocalCoopQuestLogOpen[4];
 
 void SwapGameDataLE(GameData &gameData);
 std::string DescribeLeaveReason(leaveinfo_t leaveReason);

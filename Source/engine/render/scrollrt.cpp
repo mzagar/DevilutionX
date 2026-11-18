@@ -1900,23 +1900,46 @@ void SetViewGeometry(Size viewSize)
 	gnViewportHeight = static_cast<uint16_t>(viewSize.height);
 }
 
-void RenderSeatView(const Surface &view, Player &player, Point startPosition, bool automapActive)
+void RenderSeatView(const Surface &view, Player &player, Point startPosition, bool automapActive,
+    bool invFlag, bool charFlag, bool spellbookFlag, bool questLogOpen)
 {
 	const SavedViewGeometry saved = SaveViewGeometry();
 	SetViewGeometry({ view.w(), view.h() });
 
+	// Recalculate panel areas for this seat's viewport size
+	const SavedPanelAreas savedPanels = SavePanelAreas();
+	CalculatePanelAreas();
+
 	Player *const previousMyPlayer = MyPlayer;
 	MyPlayer = &player;
-	const bool previousAutomap = AutomapActive;
+
+	// Override global UI flags with this seat's state
+	const bool savedInvFlag = invflag;
+	const bool savedCharFlag = CharFlag;
+	const bool savedSpellbookFlag = SpellbookFlag;
+	const bool savedQuestLogOpen = QuestLogIsOpen;
+	const bool savedAutomapActive = AutomapActive;
+	invflag = invFlag;
+	CharFlag = charFlag;
+	SpellbookFlag = spellbookFlag;
+	QuestLogIsOpen = questLogOpen;
 	AutomapActive = automapActive;
+
 	RenderingSplitView = true;
 	Displacement offset = {};
 	CalcFirstTilePosition(startPosition, offset);
 	DrawGame(view, startPosition, offset);
 	RenderingSplitView = false;
-	AutomapActive = previousAutomap;
+
+	// Restore global flags
+	AutomapActive = savedAutomapActive;
+	invflag = savedInvFlag;
+	CharFlag = savedCharFlag;
+	SpellbookFlag = savedSpellbookFlag;
+	QuestLogIsOpen = savedQuestLogOpen;
 	MyPlayer = previousMyPlayer;
 
+	RestorePanelAreas(savedPanels);
 	RestoreViewGeometry(saved);
 }
 
@@ -1970,7 +1993,11 @@ void DrawSplitScreen()
 		FillRect(out, cell.position.x, cell.position.y, cell.size.width, cell.size.height, 0);
 		const Surface view = out.subregion(cell.position.x, cell.position.y, cell.size.width, cell.size.height);
 		const bool seatAutomap = (seat == 0) ? AutomapActive : gbLocalCoopAutomapActive[seat];
-		RenderSeatView(view, player, startPosition, seatAutomap);
+		RenderSeatView(view, player, startPosition, seatAutomap,
+		    (seat == 0) ? invflag : gbLocalCoopInvFlag[seat],
+		    (seat == 0) ? CharFlag : gbLocalCoopCharFlag[seat],
+		    (seat == 0) ? SpellbookFlag : gbLocalCoopSpellbookFlag[seat],
+		    (seat == 0) ? QuestLogIsOpen : gbLocalCoopQuestLogOpen[seat]);
 	}
 	for (int seat = 0; seat < seatCount; seat++)
 		DrawSeatHud(out, Players[seat], layout.cells[seat]);

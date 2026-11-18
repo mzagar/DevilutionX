@@ -77,6 +77,16 @@ void CalculatePanelAreas();
 void FocusOnCharInfo();
 void OpenCharPanel();
 void CloseCharPanel();
+
+// Save/restore the panel rectangle state (for per-seat split-screen rendering).
+struct SavedPanelAreas {
+	Rectangle mainPanel;
+	Rectangle leftPanel;
+	Rectangle rightPanel;
+	uint16_t viewportHeight;
+};
+SavedPanelAreas SavePanelAreas();
+void RestorePanelAreas(const SavedPanelAreas &saved);
 void ToggleCharPanel();
 
 /**
