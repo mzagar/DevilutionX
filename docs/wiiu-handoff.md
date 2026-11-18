@@ -328,16 +328,20 @@ Status:
   `SeatInput` (per-seat buttons and stick axes). Seat 0's legacy motion state is
   only fed by seat 0's pad; `plrctrls_after_game_logic()` drives seats 1..N
   through the production walk/attack path with the sender tag set per seat.
-- Console entry — `sd:/wiiu/apps/devilutionx/local_coop.ini`:
+- Player count: **Settings -> Gameplay -> Local Co-op Players** (1/2/3/4). It
+  takes effect on the next game. Seat N loads `single_N.sv` (or `spawn_N.sv` in
+  shareware); a missing hero save aborts the start, so create one hero per seat.
+- Dev switches — `sd:/wiiu/apps/devilutionx/local_coop.ini`:
 
   ```ini
   [LocalCoop]
-  Seats=2
-  AutoStart=1   ; dev switch: skip the menu and start hero 0
+  AutoStart=1   ; skip the menu and start hero 0
+  SplitScreen=1 ; one camera per seat (default when 2+ seats)
+  ; Seats=2     ; optional override for scripted tests
   ```
 
-  Seat N loads `single_N.sv` (or `spawn_N.sv` in shareware). Missing or invalid
-  values keep ordinary single-player behaviour; malformed values never abort.
+  Missing or invalid values keep ordinary single-player behaviour; malformed
+  values never abort.
 - `local_session_runner --seats N` proves N-seat sessions and per-seat movement
   without UI, on host and on the console, via JSONL checkpoints per seat.
 
