@@ -33,8 +33,9 @@ playable build in Cemu early:
   generation) and `SeatInput` (per-seat buttons/axes); seat 0 no longer reads
   other pads' motion state. `plrctrls_after_game_logic()` drives seats 1..N
   through the production walk/attack path.
-- Console switch: `<pref>/local_coop.ini` (`[LocalCoop] Seats=2..4`, optional
-  `AutoStart=1`).
+- Player count: **Settings -> Gameplay -> Local Co-op Players** (1..4). The dev
+  switch `<pref>/local_coop.ini` carries `AutoStart`, `SplitScreen` and an
+  optional seat override.
 - Verified in Cemu: two players play together (GamePad + Wii U Pro Controller);
   a four-seat session boots.
 
@@ -42,15 +43,17 @@ Split screen now exists: `SplitScreen=1` gives each seat its own viewport and
 camera. `CalculateViewLayout` (pure, tested) splits the viewport into one, two or
 a 2x2 grid of cells with the shared 640-wide main panel centred at the bottom;
 each seat renders at its cell size with a local copy of the viewport geometry
-(§6.2), so there is no cropping or rescaling. Verified in Cemu on 17 Nov 2026 at
-1280x720 (2 seats: 640x592 cells; 4 seats: 640x296 cells).
+(§6.2), so there is no cropping or rescaling. Verified in Cemu on 18 Nov 2026 at the port's effective **853x480**
+(2 seats: 426x352 cells; 4 seats: 2x2). Setting 1280x720 in `diablo.ini` presents
+a completely white frame on this port (a pre-existing presentation bug, not the
+split renderer).
 
-Not done: compact per-seat HUDs and panels (there is only a name + HP/MP text
-placeholder per view; the main panel and inventories are seat 0's), per-seat
-vision/palette isolation in dungeons, independent travel, seat-aware
-pickups/doors/spells, and the multi-context isolation that independent levels
-require. The next step is §6.4: compact HUD geometry per cell and per-seat local
-panels, then the remaining §5 seat actions.
+Not done: per-seat status HUD and panels (only name + HP/MP text per view; the
+main panel and inventories are seat 0's), per-seat quick actions (belt/spell/map),
+the `Multi Player -> Local Co-op` lobby, per-seat saves, a co-op save/load that
+resumes the session, per-seat vision/palette isolation in dungeons, independent
+travel, and seat-aware pickups/doors/spells. The next phases are tracked in
+[`wiiu-local-coop-plan.md`](wiiu-local-coop-plan.md).
 
 ## Contents
 
