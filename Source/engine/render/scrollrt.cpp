@@ -5,6 +5,7 @@
  */
 #include "engine/render/scrollrt.h"
 
+#include <algorithm>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -37,6 +38,7 @@
 #include "engine/render/clx_render.hpp"
 #include "engine/render/dun_render.hpp"
 #include "engine/render/light_render.hpp"
+#include "engine/render/view_layout.hpp"
 #include "engine/render/text_render.hpp"
 #include "engine/trn.hpp"
 #include "engine/world_tile.hpp"
@@ -1180,6 +1182,8 @@ Displacement tileOffset;
 Displacement tileShift;
 int tileColumns;
 int tileRows;
+/// True while a split-screen view is drawn; panels live outside the view.
+bool RenderingSplitView;
 
 void CalcFirstTilePosition(Point &position, Displacement &offset)
 {
@@ -1192,7 +1196,7 @@ void CalcFirstTilePosition(Point &position, Displacement &offset)
 	position += tileShift;
 
 	// Skip rendering parts covered by the panels
-	if (CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
+	if (!RenderingSplitView && CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
 		const int multiplier = (*GetOptions().Graphics.zoom) ? 1 : 2;
 		position += Displacement(Direction::East) * multiplier;
 		offset.deltaX += -TILE_WIDTH * multiplier / 2 / 2;
@@ -1243,7 +1247,7 @@ void DrawGame(const Surface &fullOut, Point position, Displacement offset)
 	int rows = tileRows;
 
 	// Skip rendering parts covered by the panels
-	if (CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
+	if (!RenderingSplitView && CanPanelsCoverView() && (IsLeftPanelOpen() || IsRightPanelOpen())) {
 		columns -= (*GetOptions().Graphics.zoom) ? 2 : 4;
 	}
 
@@ -1837,93 +1841,147 @@ void scrollrt_draw_game_screen()
 	RenderPresent();
 }
 
-namespace {
-
-/// Second 8-bit view surface for split-screen; shares the active palette.
-SDLSurfaceUniquePtr SplitViewSurface;
-
-SDL_Surface *GetSplitViewSurface()
-{
-	if (SplitViewSurface == nullptr || SplitViewSurface->w != gnScreenWidth || SplitViewSurface->h != gnScreenHeight) {
-		SplitViewSurface = SDLWrap::CreateRGBSurfaceWithFormat(
-		    /*flags=*/0, gnScreenWidth, gnScreenHeight, /*depth=*/8, SDL_PIXELFORMAT_INDEX8);
-		if (SDL_SetSurfacePalette(SplitViewSurface.get(), Palette.get()) < 0)
-			ErrSdl();
-	}
-	return SplitViewSurface.get();
-}
-
-void DrawWorldView(const Surface &out, Point startPosition)
-{
-	Displacement offset = {};
-	CalcFirstTilePosition(startPosition, offset);
-	DrawGame(out, startPosition, offset);
-}
-
-/**
- * @brief Two-seat split screen: one world, one camera per seat, shared main panel.
- *
- * Each seat's world is rendered at the normal 640x352 viewport and the central
- * half of each is composited side by side. The main panel stays seat 0's.
- * This is the first split-screen milestone; per-seat panels and compact HUDs
- * come next.
- */
-void DrawSplitScreen()
-{
-	Surface out = GlobalBackBuffer();
-	UndrawCursor(out);
-
-	DrawWorldView(out, ViewPosition);
-
-	Player &secondPlayer = Players[1];
-	Player *const previousMyPlayer = MyPlayer;
-	MyPlayer = &secondPlayer;
-	Surface second(GetSplitViewSurface(), SDL_Rect { 0, 0, gnScreenWidth, gnScreenHeight });
-	DrawWorldView(second, secondPlayer.position.tile);
-	MyPlayer = previousMyPlayer;
-
-	// Central crop of each view, side by side. A row buffer avoids overwriting
-	// the source while both halves are copied into the same surface.
-	const int viewHeight = gnViewportHeight;
-	const int halfWidth = gnScreenWidth / 2;
-	const int cropX = (gnScreenWidth - halfWidth) / 2;
-	std::vector<uint8_t> row(static_cast<size_t>(halfWidth));
-	for (int y = 0; y < viewHeight; y++) {
-		std::memcpy(row.data(), out.at(cropX, y), static_cast<size_t>(halfWidth));
-		std::memcpy(out.at(0, y), row.data(), static_cast<size_t>(halfWidth));
-		std::memcpy(out.at(halfWidth, y), second.at(cropX, y), static_cast<size_t>(halfWidth));
-	}
-
-	DrawMainPanel(out);
-	DrawLifeFlaskLower(out, false);
-	DrawManaFlaskLower(out, false);
-	DrawSpell(out);
-	DrawMainPanelButtons(out);
-	DrawInvBelt(out);
-	DrawXPBar(out);
-	DrawCursor(out);
-	DrawFPS(out);
-	lua::GameDrawComplete();
-	RedrawComplete();
-	for (const PanelDrawComponent component : enum_values<PanelDrawComponent>()) {
-		if (IsRedrawComponent(component))
-			RedrawComponentComplete(component);
-	}
-
-	if (!RenderDirectlyToOutputSurface)
-		Blit(PalSurface, nullptr, nullptr);
-	RenderPresent();
-}
-
-} // namespace
-
+namespace {
+
+struct SavedViewGeometry {
+	uint16_t screenWidth;
+	uint16_t screenHeight;
+	uint16_t viewportHeight;
+	Displacement shift;
+	Displacement offset;
+	int columns;
+	int rows;
+};
+
+SavedViewGeometry SaveViewGeometry()
+{
+	return { gnScreenWidth, gnScreenHeight, gnViewportHeight, tileShift, tileOffset, tileColumns, tileRows };
+}
+
+void RestoreViewGeometry(const SavedViewGeometry &saved)
+{
+	gnScreenWidth = saved.screenWidth;
+	gnScreenHeight = saved.screenHeight;
+	gnViewportHeight = saved.viewportHeight;
+	tileShift = saved.shift;
+	tileOffset = saved.offset;
+	tileColumns = saved.columns;
+	tileRows = saved.rows;
+}
+
+/// Same math as CalcViewportGeometry(), for a view that has no panel of its own.
+void SetViewGeometry(Size viewSize)
+{
+	const int screenWidth = viewSize.width;
+	const int screenHeight = viewSize.height;
+	const Point playerPosition { screenWidth / 2, screenHeight / 2 };
+	const int tilesToTop = (playerPosition.y + TILE_HEIGHT - 1) / TILE_HEIGHT;
+	const int tilesToLeft = (playerPosition.x + TILE_WIDTH - 1) / TILE_WIDTH;
+	Point startPosition = playerPosition - Displacement { tilesToLeft * TILE_WIDTH, tilesToTop * TILE_HEIGHT };
+
+	tileShift = { 0, 0 };
+	tileShift += Displacement(Direction::North) * tilesToTop;
+	tileShift += Displacement(Direction::West) * tilesToLeft;
+	if (tilesToLeft * TILE_WIDTH >= playerPosition.x) {
+		startPosition += Displacement { TILE_WIDTH / 2, -TILE_HEIGHT / 2 };
+		tileShift += Displacement(Direction::NorthEast);
+	} else if (tilesToTop * TILE_HEIGHT < playerPosition.y) {
+		startPosition += Displacement { 0, -TILE_HEIGHT };
+		tileShift += Displacement(Direction::North);
+	}
+	tileOffset = { startPosition.x - TILE_WIDTH / 2, startPosition.y + TILE_HEIGHT / 2 - 1 };
+	tileRows = (screenHeight - startPosition.y + TILE_HEIGHT / 2 - 1) / (TILE_HEIGHT / 2);
+	tileColumns = (screenWidth - startPosition.x + TILE_WIDTH - 1) / TILE_WIDTH;
+
+	gnScreenWidth = static_cast<uint16_t>(viewSize.width);
+	gnScreenHeight = static_cast<uint16_t>(viewSize.height);
+	gnViewportHeight = static_cast<uint16_t>(viewSize.height);
+}
+
+void RenderSeatView(const Surface &view, Player &player, Point startPosition)
+{
+	const SavedViewGeometry saved = SaveViewGeometry();
+	SetViewGeometry({ view.w(), view.h() });
+
+	Player *const previousMyPlayer = MyPlayer;
+	MyPlayer = &player;
+	RenderingSplitView = true;
+	Displacement offset = {};
+	CalcFirstTilePosition(startPosition, offset);
+	DrawGame(view, startPosition, offset);
+	RenderingSplitView = false;
+	MyPlayer = previousMyPlayer;
+
+	RestoreViewGeometry(saved);
+}
+
+/// Minimal per-seat HUD: name and the two resource pools, until per-seat panels exist.
+void DrawSeatHud(const Surface &out, const Player &player, const Rectangle &cell)
+{
+	const std::string text = StrCat(
+	    player._pName, "  ",
+	    player._pHitPoints.whole(), "/", player._pMaxHP.whole(),
+	    "  ", player._pMana.whole(), "/", player._pMaxMana.whole());
+	DrawString(out, text, { cell.position.x + 4, cell.position.y + 4 }, { .flags = UiFlags::ColorWhite });
+}
+
+/**
+ * @brief Split each local seat into its own viewport, with the shared main panel.
+ *
+ * Views are rendered at their cell size with a local copy of the viewport
+ * geometry, so no cropping or rescaling is involved. The panel keeps seat 0's
+ * HUD; the per-seat text is a placeholder until per-seat panels exist.
+ */
+void DrawSplitScreen()
+{
+	Surface out = GlobalBackBuffer();
+	const ViewLayout layout = CalculateViewLayout({ gnScreenWidth, gnScreenHeight }, gbLocalCoopSeats, GetMainPanel().size.height);
+	const int seatCount = std::min<int>(gbLocalCoopSeats, static_cast<int>(layout.cells.size()));
+
+	UndrawCursor(out);
+
+	for (int seat = 0; seat < seatCount; seat++) {
+		const Rectangle &cell = layout.cells[seat];
+		Player &player = Players[seat];
+		const Point startPosition = seat == 0
+		    ? Point { ViewPosition.x, ViewPosition.y }
+		    : Point { player.position.tile.x, player.position.tile.y };
+		const Surface view = out.subregion(cell.position.x, cell.position.y, cell.size.width, cell.size.height);
+		RenderSeatView(view, player, startPosition);
+	}
+	for (int seat = 0; seat < seatCount; seat++)
+		DrawSeatHud(out, Players[seat], layout.cells[seat]);
+
+	DrawMainPanel(out);
+	DrawLifeFlaskLower(out, false);
+	DrawManaFlaskLower(out, false);
+	DrawSpell(out);
+	DrawMainPanelButtons(out);
+	DrawInvBelt(out);
+	DrawXPBar(out);
+	DrawCursor(out);
+	DrawFPS(out);
+	lua::GameDrawComplete();
+	RedrawComplete();
+	for (const PanelDrawComponent component : enum_values<PanelDrawComponent>()) {
+		if (IsRedrawComponent(component))
+			RedrawComponentComplete(component);
+	}
+
+	if (!RenderDirectlyToOutputSurface)
+		Blit(PalSurface, nullptr, nullptr);
+	RenderPresent();
+}
+
+} // namespace
+
 void DrawAndBlit()
 {
 	if (!gbRunGame || HeadlessMode) {
 		return;
 	}
 
-	if (gbLocalCoopSplitScreen && gbLocalCoopSeats == 2) {
+	if (gbLocalCoopSplitScreen && gbLocalCoopSeats > 1 && !*GetOptions().Graphics.zoom) {
 		DrawSplitScreen();
 		return;
 	}

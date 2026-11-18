@@ -62,6 +62,7 @@ set(tests
   spell_ui_test
   char_panel_test
   game_menu_test
+  view_layout_test
   item_flags_wire_test
   local_transport_test
   loopback_transport_test

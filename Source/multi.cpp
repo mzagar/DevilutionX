@@ -47,6 +47,7 @@
 #include "utils/format.hpp"
 #include "utils/is_of.hpp"
 #include "utils/language.h"
+#include "utils/display.h"
 #include "utils/file_util.h"
 #include "utils/ini.hpp"
 #include "utils/paths.h"
@@ -650,7 +651,7 @@ bool InitLocalCoop(GameData *gameData, uint8_t seats)
 	// Loading the seats moved gSaveNumber to the last one; autosave and exit must
 	// keep writing the camera owner's character to its own archive.
 	gSaveNumber = MyPlayerId;
-	Log("Local co-op session with {} seats", seats);
+	Log("Local co-op session with {} seats (screen {}x{}, viewport {})", seats, gnScreenWidth, gnScreenHeight, gnViewportHeight);
 	return true;
 }
 
