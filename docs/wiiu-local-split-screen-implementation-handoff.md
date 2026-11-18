@@ -38,10 +38,16 @@ playable build in Cemu early:
 - Verified in Cemu: two players play together (GamePad + Wii U Pro Controller);
   a four-seat session boots.
 
-Not done: split screen itself (shared camera), independent travel, per-seat HUD
-and panels, seat-aware pickups/doors/spells, and the multi-context isolation that
-independent levels require. The implementation sequence in §11 still applies for
-the remaining work; the render steps (§6) are next.
+Split screen now exists as a first pass: with `SplitScreen=1`, two seats render
+independent cameras into one frame (central half of each 640x352 view composed
+side by side, shared main panel). Verified in Cemu on 17 Nov 2026.
+
+Not done: proper per-view geometry and compact HUDs (the first pass crops instead
+of giving each seat a full-width view; the panel is seat 0's), four-cell layout
+(four seats fall back to the shared camera), independent travel, per-seat panels,
+seat-aware pickups/doors/spells, and the multi-context isolation that independent
+levels require. The next step is the §6.2/§6.4 layout work: a 1280x720 logical
+frame with one full 640x592 view per seat, then compact per-seat HUDs.
 
 ## Contents
 
