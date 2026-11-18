@@ -862,8 +862,12 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 			uint8_t destinationTownId = TristramTownId;
 			if (mode == WM_DIABTOWNSWITCH)
 				destinationTownId = static_cast<uint8_t>(reinterpret_cast<uintptr_t>(event.user.data1));
-			if (gbIsMultiplayer)
-				pfile_write_hero();
+			if (gbIsMultiplayer || gbLocalCoopSeats != 0) {
+				if (gbLocalCoopSeats != 0)
+					pfile_write_all_heroes();
+				else
+					pfile_write_hero();
+			}
 			nthread_ignore_mutex(true);
 			PaletteFadeOut(8);
 			sound_stop();
@@ -984,8 +988,11 @@ void GameLoopEnd()
 {
 	demo::NotifyGameLoopEnd();
 
-	if (gbIsMultiplayer) {
-		pfile_write_hero(/*writeGameData=*/false);
+	if (gbIsMultiplayer || gbLocalCoopSeats != 0) {
+		if (gbLocalCoopSeats != 0)
+			pfile_write_all_heroes(/*writeGameData=*/false);
+		else
+			pfile_write_hero(/*writeGameData=*/false);
 		sfile_write_stash();
 	}
 

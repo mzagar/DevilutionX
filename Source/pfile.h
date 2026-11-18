@@ -100,6 +100,9 @@ std::optional<SaveReader> OpenStashArchive();
 const char *pfile_get_password();
 std::unique_ptr<std::byte[]> ReadArchive(SaveReader &archive, const char *pszName, size_t *pdwLen = nullptr);
 void pfile_write_hero(bool writeGameData = false);
+// Saves every active local co-op seat's hero to its own save slot.
+// Game data (world) is saved once with seat 0's save when writeGameData is true.
+void pfile_write_all_heroes(bool writeGameData = false);
 
 #ifndef DISABLE_DEMOMODE
 /**

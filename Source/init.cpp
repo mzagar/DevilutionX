@@ -115,8 +115,11 @@ bool AreExtraFontsOutOfDate()
 
 void init_cleanup()
 {
-	if (gbIsMultiplayer && gbRunGame) {
-		pfile_write_hero(/*writeGameData=*/false);
+	if ((gbIsMultiplayer || gbLocalCoopSeats != 0) && gbRunGame) {
+		if (gbLocalCoopSeats != 0)
+			pfile_write_all_heroes(/*writeGameData=*/false);
+		else
+			pfile_write_hero(/*writeGameData=*/false);
 		sfile_write_stash();
 	}
 

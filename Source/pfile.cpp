@@ -27,7 +27,9 @@
 #include "engine/render/primitive_render.hpp"
 #include "game_mode.hpp"
 #include "loadsave.h"
+#include "multi.h"
 #include "menu.h"
+#include "player.h"
 #include "mods/mod_identity.h"
 #include "mpq/mpq_common.hpp"
 #include "pack.h"
@@ -653,6 +655,40 @@ void pfile_write_hero(bool writeGameData)
 #endif
 }
 
+void pfile_write_all_heroes(bool writeGameData)
+{
+	const uint8_t seats = gbLocalCoopSeats;
+	if (seats == 0) {
+		pfile_write_hero(writeGameData);
+		return;
+	}
+	const uint32_t previousSaveNumber = gSaveNumber;
+	Player *const previousMyPlayer = MyPlayer;
+	// Save game data (world) once with seat 0's archive
+	{
+		const uint32_t saveNum = gbLocalCoopSaveSlot[0] != 0 ? gbLocalCoopSaveSlot[0] : 0;
+		gSaveNumber = saveNum;
+		SaveWriter saveWriter = GetSaveWriter(saveNum, /*carryForward=*/writeGameData);
+		pfile_write_hero(saveWriter, writeGameData);
+	}
+	// Save each seat's hero to its own archive (without overwriting game data)
+	for (uint8_t seat = 1; seat < seats && seat < Players.size(); ++seat) {
+		if (!Players[seat].plractive)
+			continue;
+		const uint32_t saveNum = gbLocalCoopSaveSlot[seat] != 0 ? gbLocalCoopSaveSlot[seat] : seat;
+		gSaveNumber = saveNum;
+		MyPlayer = &Players[seat];
+		SaveWriter seatWriter = GetSaveWriter(saveNum);
+		pfile_write_hero(seatWriter, /*writeGameData=*/false);
+	}
+	gSaveNumber = previousSaveNumber;
+	MyPlayer = previousMyPlayer;
+
+#ifdef __EMSCRIPTEN__
+	emscripten_run_script("if (typeof Module !== 'undefined' && Module.saveToIndexedDB) Module.saveToIndexedDB();");
+#endif
+}
+
 #ifndef DISABLE_DEMOMODE
 void pfile_write_hero_demo(int demo)
 {
@@ -828,7 +864,7 @@ void pfile_update(bool forceSave)
 {
 	static Uint32 prevTick;
 
-	if (!gbIsMultiplayer)
+	if (!gbIsMultiplayer && gbLocalCoopSeats == 0)
 		return;
 
 	const Uint32 tick = SDL_GetTicks();
@@ -836,7 +872,10 @@ void pfile_update(bool forceSave)
 		return;
 
 	prevTick = tick;
-	pfile_write_hero();
+	if (gbLocalCoopSeats != 0)
+		pfile_write_all_heroes();
+	else
+		pfile_write_hero();
 	sfile_write_stash();
 }
 
