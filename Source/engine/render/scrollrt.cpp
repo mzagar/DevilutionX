@@ -1952,6 +1952,12 @@ void DrawSplitScreen()
 	for (int seat = 0; seat < seatCount; seat++)
 		DrawSeatHud(out, Players[seat], layout.cells[seat]);
 
+	// The split views end above the panel. Black out the shared panel band first:
+	// the area left and right of the 640-wide panel would otherwise keep stale
+	// pixels from the previous frame.
+	for (int y = layout.panel.position.y; y < gnScreenHeight; y++)
+		std::memset(out.at(0, y), 0, static_cast<size_t>(gnScreenWidth));
+
 	DrawMainPanel(out);
 	DrawLifeFlaskLower(out, false);
 	DrawManaFlaskLower(out, false);
