@@ -65,6 +65,7 @@
 #include "panels/console.hpp"
 #include "panels/partypanel.hpp"
 #include "panels/quest_log.hpp"
+#include "panels/spell_icons.hpp"
 #include "panels/spell_list.hpp"
 #include "plrmsg.h"
 #include "qol/chatlog.h"
@@ -75,6 +76,7 @@
 #include "qol/visual_store.h"
 #include "qol/xpbar.h"
 #include "stores.h"
+#include "tables/playerdat.hpp"
 #include "towners.h"
 #include "utils/attributes.h"
 #include "utils/display.h"
@@ -1945,17 +1947,14 @@ void RenderSeatView(const Surface &view, Player &player, Point startPosition, bo
 	RestoreViewGeometry(saved);
 }
 
-/// Per-seat belt strip: the owning seat's potions, drawn inside its own cell.
-void DrawSeatBelt(const Surface &out, const Player &player, const Rectangle &cell)
+/// Per-seat belt row: the owning seat's potions, drawn inside its own panel.
+void DrawSeatBelt(const Surface &out, const Player &player, Point origin)
 {
 	constexpr int SlotSize = 26;
 	constexpr int Gap = 2;
-	const int stripWidth = MaxBeltItems * SlotSize + (MaxBeltItems - 1) * Gap;
-	const int x0 = cell.position.x + (cell.size.width - stripWidth) / 2;
-	const int y0 = cell.position.y + cell.size.height - SlotSize - 4;
 
 	for (int i = 0; i < MaxBeltItems; i++) {
-		const Point position { x0 + i * (SlotSize + Gap), y0 };
+		const Point position { origin.x + i * (SlotSize + Gap), origin.y };
 		InvDrawSlotBack(out, position, { SlotSize, SlotSize }, ITEM_QUALITY_NORMAL);
 		const Item &item = player.SpdList[i];
 		if (item.isEmpty())
@@ -1965,80 +1964,159 @@ void DrawSeatBelt(const Surface &out, const Player &player, const Rectangle &cel
 	}
 }
 
-/// Per-seat status HUD: name, HP/MP values and compact resource bars.
-void DrawSeatHud(const Surface &out, const Player &player, const Rectangle &cell)
+/// Height of the compact per-seat panel inside a cell.
+int SeatPanelHeight(const Rectangle &cell)
 {
-	const Point origin { cell.position.x + 4, cell.position.y + 4 };
-	const std::string text = StrCat(
-	    player._pName, "  ",
-	    player._pHitPoints.whole(), "/", player._pMaxHP.whole(),
-	    "  ", player._pMana.whole(), "/", player._pMaxMana.whole());
-	DrawString(out, text, origin, { .flags = UiFlags::ColorWhite });
+	// Enough for the belt row, two resource bars and the XP line; smaller cells
+	// (four seats) get the slim variant without the numeric readouts.
+	return cell.size.height >= 320 ? 96 : 72;
+}
 
-	constexpr int BarWidth = 80;
-	constexpr int BarHeight = 5;
+constexpr int SeatBeltSlot = 26;
+constexpr int SeatBeltGap = 2;
+constexpr int SeatBeltWidth = MaxBeltItems * SeatBeltSlot + (MaxBeltItems - 1) * SeatBeltGap;
+
+/**
+ * @brief Compact per-seat panel: that seat's flasks, belt, spell and XP.
+ *
+ * Each seat owns a complete "player screen": this panel is drawn inside the
+ * seat's own cell from that seat's Player, so two players never share potions,
+ * spell or experience readouts.
+ */
+void DrawSeatPanel(const Surface &out, const Player &player, const Rectangle &cell, int panelHeight)
+{
+	const Rectangle panel {
+		{ cell.position.x, cell.position.y + cell.size.height - panelHeight },
+		{ cell.size.width, panelHeight }
+	};
+	const bool withNumbers = panelHeight >= 88;
+
+	// Panel background and a thin gold separator against the world view.
+	FillRect(out, panel.position.x, panel.position.y, panel.size.width, panel.size.height, 0);
+	FillRect(out, panel.position.x, panel.position.y, panel.size.width, 1, PAL16_BEIGE + 2);
+
+	constexpr int BarWidth = 70;
+	constexpr int BarHeight = 8;
+	const int barsX = panel.position.x + 6;
 	const auto drawBar = [&](int y, int value, int max, uint8_t color) {
-		FillRect(out, origin.x, y, BarWidth, BarHeight, 0);
+		FillRect(out, barsX, y, BarWidth, BarHeight, PAL16_GRAY + 8);
 		if (max <= 0)
 			return;
 		const int filled = std::clamp(value, 0, max) * BarWidth / max;
 		if (filled > 0)
-			FillRect(out, origin.x, y, filled, BarHeight, color);
+			FillRect(out, barsX, y, filled, BarHeight, color);
 	};
-	drawBar(origin.y + 16, player._pHitPoints.whole(), player._pMaxHP.whole(), PAL8_RED + 4);
-	drawBar(origin.y + 22, player._pMana.whole(), player._pMaxMana.whole(), PAL8_BLUE + 3);
+
+	int barY = panel.position.y + (withNumbers ? 12 : 8);
+	drawBar(barY, player._pHitPoints.whole(), player._pMaxHP.whole(), PAL8_RED + 4);
+	if (withNumbers) {
+		DrawString(out, StrCat(player._pHitPoints.whole(), "/", player._pMaxHP.whole()),
+		    Rectangle { { barsX, barY + BarHeight + 1 }, { BarWidth, 12 } },
+		    { .flags = UiFlags::ColorRed | UiFlags::AlignCenter });
+	}
+	barY += withNumbers ? 34 : 16;
+	drawBar(barY, player._pMana.whole(), player._pMaxMana.whole(), PAL8_BLUE + 3);
+	if (withNumbers) {
+		DrawString(out, StrCat(player._pMana.whole(), "/", player._pMaxMana.whole()),
+		    Rectangle { { barsX, barY + BarHeight + 1 }, { BarWidth, 12 } },
+		    { .flags = UiFlags::ColorBlue | UiFlags::AlignCenter });
+	}
+
+	// Belt: centred in the panel, from this seat's own belt slots.
+	const int beltX = panel.position.x + (panel.size.width - SeatBeltWidth) / 2;
+	const int beltY = panel.position.y + (withNumbers ? 10 : 6);
+	DrawSeatBelt(out, player, { beltX, beltY });
+
+	// Active spell icon on the right.
+	constexpr int IconBox = 30;
+	const int iconX = panel.position.x + panel.size.width - IconBox - 6;
+	const int iconY = beltY;
+	FillRect(out, iconX, iconY, IconBox, IconBox, PAL16_GRAY + 4);
+	if (IsValidSpell(player._pRSpell)) {
+		DrawSmallSpellIcon(out, { iconX + 1, iconY + 1 }, player._pRSpell);
+	}
+
+	// Experience bar along the bottom edge.
+	constexpr int XpHeight = 5;
+	const int xpY = panel.position.y + panel.size.height - XpHeight - 2;
+	const int xpWidth = panel.size.width - 12;
+	FillRect(out, panel.position.x + 6, xpY, xpWidth, XpHeight, PAL16_GRAY + 8);
+	const uint8_t charLevel = player.getCharacterLevel();
+	const uint64_t prevXp = GetNextExperienceThresholdForLevel(charLevel - 1);
+	const uint64_t nextXp = GetNextExperienceThresholdForLevel(charLevel);
+	if (player.isMaxCharacterLevel()) {
+		FillRect(out, panel.position.x + 6, xpY, xpWidth, XpHeight, PAL8_YELLOW + 4);
+	} else if (nextXp > prevXp && player._pExperience >= prevXp) {
+		const auto filled = static_cast<int>(static_cast<uint64_t>(xpWidth) * (player._pExperience - prevXp) / (nextXp - prevXp));
+		if (filled > 0)
+			FillRect(out, panel.position.x + 6, xpY, filled, XpHeight, PAL16_BEIGE + 10);
+	}
+}
+
+/// Per-seat name tag, so a player can tell which view is theirs.
+void DrawSeatHud(const Surface &out, const Player &player, const Rectangle &cell)
+{
+	DrawString(out, player._pName, { cell.position.x + 4, cell.position.y + 4 }, { .flags = UiFlags::ColorWhite });
 }
 
 /**
  * @brief Split each local seat into its own viewport, with the shared main panel.
+/**
+ * @brief Split the screen into one self-contained "player screen" per seat.
  *
- * Views are rendered at their cell size with a local copy of the viewport
- * geometry, so no cropping or rescaling is involved. The panel keeps seat 0's
- * HUD; the per-seat text is a placeholder until per-seat panels exist.
+ * Each cell is the seat's own world view plus its own compact panel (flasks,
+ * belt, spell, XP). Nothing is shared: no global bottom panel, so two players
+ * never see the same potions. Views are rendered at cell size with a local copy
+ * of the viewport geometry, so no cropping or rescaling is involved.
  */
 void DrawSplitScreen()
 {
 	Surface out = GlobalBackBuffer();
-	const ViewLayout layout = CalculateViewLayout({ gnScreenWidth, gnScreenHeight }, gbLocalCoopSeats, GetMainPanel().size.height);
+	// No reserved panel band: the panel lives inside each cell.
+	const ViewLayout layout = CalculateViewLayout({ gnScreenWidth, gnScreenHeight }, gbLocalCoopSeats, 0);
 	const int seatCount = std::min<int>(gbLocalCoopSeats, static_cast<int>(layout.cells.size()));
 
 	UndrawCursor(out);
+	// Unused cells (three seats) and cell borders must not keep stale pixels.
+	FillRect(out, 0, 0, gnScreenWidth, gnScreenHeight, 0);
 
 	for (int seat = 0; seat < seatCount; seat++) {
 		const Rectangle &cell = layout.cells[seat];
 		Player &player = Players[seat];
+		const int panelHeight = SeatPanelHeight(cell);
+		const int viewHeight = std::max(0, cell.size.height - panelHeight);
 		const Point startPosition = seat == 0
 		    ? Point { ViewPosition.x, ViewPosition.y }
 		    : Point { player.position.tile.x, player.position.tile.y };
-		// The isometric grid does not cover every pixel of the rectangular cell;
-		// clear it first so the uncovered edges are black instead of stale pixels.
-		FillRect(out, cell.position.x, cell.position.y, cell.size.width, cell.size.height, 0);
-		const Surface view = out.subregion(cell.position.x, cell.position.y, cell.size.width, cell.size.height);
+		const Surface view = out.subregion(cell.position.x, cell.position.y, cell.size.width, viewHeight);
 		const bool seatAutomap = (seat == 0) ? AutomapActive : gbLocalCoopAutomapActive[seat];
+		// A 320x352 side panel only fits a cell at least that tall. In shorter
+		// cells an overlay would draw past the subregion into its neighbour, so
+		// the seat keeps playing without its panel until compact overlays land.
+		const bool panelsFit = viewHeight >= SidePanelSize.height;
 		RenderSeatView(view, player, startPosition, seatAutomap,
-		    (seat == 0) ? invflag : gbLocalCoopInvFlag[seat],
-		    (seat == 0) ? CharFlag : gbLocalCoopCharFlag[seat],
-		    (seat == 0) ? SpellbookFlag : gbLocalCoopSpellbookFlag[seat],
-		    (seat == 0) ? QuestLogIsOpen : gbLocalCoopQuestLogOpen[seat]);
+		    panelsFit && ((seat == 0) ? invflag : gbLocalCoopInvFlag[seat]),
+		    panelsFit && ((seat == 0) ? CharFlag : gbLocalCoopCharFlag[seat]),
+		    panelsFit && ((seat == 0) ? SpellbookFlag : gbLocalCoopSpellbookFlag[seat]),
+		    panelsFit && ((seat == 0) ? QuestLogIsOpen : gbLocalCoopQuestLogOpen[seat]));
 	}
+
 	for (int seat = 0; seat < seatCount; seat++) {
-		DrawSeatHud(out, Players[seat], layout.cells[seat]);
-		DrawSeatBelt(out, Players[seat], layout.cells[seat]);
+		const Rectangle &cell = layout.cells[seat];
+		DrawSeatHud(out, Players[seat], cell);
+		DrawSeatPanel(out, Players[seat], cell, SeatPanelHeight(cell));
 	}
 
-	// The split views end above the panel. Black out the shared panel band first:
-	// the area left and right of the 640-wide panel would otherwise keep stale
-	// pixels from the previous frame.
-	for (int y = layout.panel.position.y; y < gnScreenHeight; y++)
-		std::memset(out.at(0, y), 0, static_cast<size_t>(gnScreenWidth));
+	// Cell separators so the split is unambiguous on a TV.
+	for (int seat = 1; seat < seatCount; seat++) {
+		const Rectangle &cell = layout.cells[seat];
+		FillRect(out, cell.position.x, cell.position.y, 1, cell.size.height, PAL16_BEIGE + 2);
+	}
+	if (seatCount > 2) {
+		// 2x2 grid: draw the horizontal divider as well.
+		FillRect(out, 0, layout.viewport.height / 2, gnScreenWidth, 1, PAL16_BEIGE + 2);
+	}
 
-	DrawMainPanel(out);
-	DrawLifeFlaskLower(out, false);
-	DrawManaFlaskLower(out, false);
-	DrawSpell(out);
-	DrawMainPanelButtons(out);
-	DrawInvBelt(out);
-	DrawXPBar(out);
 	DrawCursor(out);
 	DrawFPS(out);
 	lua::GameDrawComplete();
