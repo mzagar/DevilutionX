@@ -61,6 +61,7 @@
 #include "engine/load_file.hpp"
 #include "engine/random.hpp"
 #include "engine/render/clx_render.hpp"
+#include "engine/render/scrollrt.h"
 #include "engine/sound.h"
 #include "game_mode.hpp"
 #include "gamemenu.h"
@@ -800,7 +801,7 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 	case SDL_EVENT_MOUSE_MOTION:
 		if (ControlMode == ControlTypes::KeyboardAndMouse && invflag)
 			InvalidateInventorySlot();
-		MousePosition = { SDLC_EventMotionIntX(event), SDLC_EventMotionIntY(event) };
+		MousePosition = ScreenToSeatCanvas({ SDLC_EventMotionIntX(event), SDLC_EventMotionIntY(event) });
 		gmenu_on_mouse_move();
 		return;
 	case SDL_EVENT_MOUSE_BUTTON_DOWN:
@@ -3131,7 +3132,7 @@ void DisableInputEventHandler(const SDL_Event &event, uint16_t /*modState*/)
 {
 	switch (event.type) {
 	case SDL_EVENT_MOUSE_MOTION:
-		MousePosition = { SDLC_EventMotionIntX(event), SDLC_EventMotionIntY(event) };
+		MousePosition = ScreenToSeatCanvas({ SDLC_EventMotionIntX(event), SDLC_EventMotionIntY(event) });
 		return;
 	case SDL_EVENT_MOUSE_BUTTON_DOWN:
 		if (sgbMouseDown != CLICK_NONE)

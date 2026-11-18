@@ -1417,8 +1417,9 @@ void DrawView(const Surface &out, Point startPosition)
 
 	DrawDurIcon(out);
 
-	if (!RenderingSplitView)
-		DrawLevelButton(out);
+	// The level-up button is per seat and anchors off that seat's own panel, which
+	// is correct inside a seat canvas.
+	DrawLevelButton(out);
 
 	if (CharFlag) {
 		DrawChr(out);
@@ -1919,6 +1920,11 @@ std::optional<OwnedSurface> SeatCanvas;
 
 constexpr Size SeatCanvasSize { 640, 480 };
 
+/// Physical-screen rectangles of the seat canvases from the last composed frame.
+Rectangle SplitSeatCanvasRects[4];
+/// Number of seats the last composed frame drew (0 when not split).
+int gbLocalCoopSplitSeatCount;
+
 [[nodiscard]] bool EnsureSeatCanvas()
 {
 	if (!SeatCanvas.has_value())
@@ -1987,6 +1993,10 @@ void RenderSeatCanvas(int seat)
 	const bool savedBook = SpellbookFlag;
 	const bool savedQuest = QuestLogIsOpen;
 	const bool savedAutomap = AutomapActive;
+	const bool savedSpellSelect = SpellSelectFlag;
+	const bool savedQText = qtextflag;
+	const bool savedHelp = HelpFlag;
+	const bool savedDoom = DoomFlag;
 
 	MyPlayer = &player;
 	MyPlayerId = static_cast<uint8_t>(seat);
@@ -1996,6 +2006,15 @@ void RenderSeatCanvas(int seat)
 	SpellbookFlag = (seat == 0) ? savedBook : gbLocalCoopSpellbookFlag[seat];
 	QuestLogIsOpen = (seat == 0) ? savedQuest : gbLocalCoopQuestLogOpen[seat];
 	AutomapActive = (seat == 0) ? savedAutomap : gbLocalCoopAutomapActive[seat];
+	// Modal overlays that belong to the physical screen / seat 0 only: the
+	// speedbook needs a cursor, and NPC text, help, chat and the doom screen are
+	// single shared UI states. They must not be baked into every seat canvas.
+	if (seat != 0) {
+		SpellSelectFlag = false;
+		qtextflag = false;
+		HelpFlag = false;
+		DoomFlag = false;
+	}
 
 	SetViewGeometry(SeatCanvasSize);
 	CalculatePanelAreas();
@@ -2018,6 +2037,11 @@ void RenderSeatCanvas(int seat)
 	DrawInvBelt(canvas);
 	DrawXPBar(canvas);
 
+	// Seat 0 owns the mouse cursor; draw it inside its own canvas so it is scaled
+	// and positioned together with the panel it points at.
+	if (seat == 0)
+		DrawCursor(canvas);
+
 	RenderingSplitView = false;
 
 	RestorePanelAreas(savedPanels);
@@ -2030,6 +2054,10 @@ void RenderSeatCanvas(int seat)
 	SpellbookFlag = savedBook;
 	QuestLogIsOpen = savedQuest;
 	AutomapActive = savedAutomap;
+	SpellSelectFlag = savedSpellSelect;
+	qtextflag = savedQText;
+	HelpFlag = savedHelp;
+	DoomFlag = savedDoom;
 }
 
 /**
@@ -2051,11 +2079,14 @@ void DrawSplitScreen()
 
 	const ViewLayout layout = CalculateViewLayout({ gnScreenWidth, gnScreenHeight }, gbLocalCoopSeats, 0);
 	const int seatCount = std::min<int>(gbLocalCoopSeats, static_cast<int>(layout.cells.size()));
+	gbLocalCoopSplitSeatCount = seatCount;
 
 	for (int seat = 0; seat < seatCount; seat++) {
 		const Rectangle &cell = layout.cells[seat];
 		RenderSeatCanvas(seat);
-		BlitSeatCanvas(*SeatCanvas, out, FitSeatCanvas(cell));
+		const Rectangle canvasRect = FitSeatCanvas(cell);
+		SplitSeatCanvasRects[seat] = canvasRect;
+		BlitSeatCanvas(*SeatCanvas, out, canvasRect);
 	}
 
 	// Cell separators so the split is unambiguous on a TV.
@@ -2068,9 +2099,8 @@ void DrawSplitScreen()
 		FillRect(out, 0, layout.viewport.height / 2, gnScreenWidth, 1, PAL16_BEIGE + 2);
 	}
 
-	// The mouse belongs to the physical screen (seat 0); the seats themselves are
-	// already composed.
-	DrawCursor(out);
+	// The mouse belongs to the physical screen (seat 0) and is drawn inside seat
+	// 0's canvas, already scaled with it.
 	DrawFPS(out);
 	lua::GameDrawComplete();
 	RedrawComplete();
@@ -2086,6 +2116,23 @@ void DrawSplitScreen()
 
 } // namespace
 
+bool IsSplitScreenActive()
+{
+	return gbLocalCoopSplitSeatCount > 1;
+}
+
+Point ScreenToSeatCanvas(Point screenPosition)
+{
+	if (!IsSplitScreenActive())
+		return screenPosition;
+	const Rectangle &rect = SplitSeatCanvasRects[0];
+	if (rect.size.width <= 0 || rect.size.height <= 0)
+		return screenPosition;
+	const int x = std::clamp((screenPosition.x - rect.position.x) * SeatCanvasSize.width / rect.size.width, 0, SeatCanvasSize.width - 1);
+	const int y = std::clamp((screenPosition.y - rect.position.y) * SeatCanvasSize.height / rect.size.height, 0, SeatCanvasSize.height - 1);
+	return { x, y };
+}
+
 void DrawAndBlit()
 {
 	if (!gbRunGame || HeadlessMode) {
@@ -2096,6 +2143,7 @@ void DrawAndBlit()
 		DrawSplitScreen();
 		return;
 	}
+	gbLocalCoopSplitSeatCount = 0;
 
 	int hgt = 0;
 	bool drawHealth = IsRedrawComponent(PanelDrawComponent::Health);

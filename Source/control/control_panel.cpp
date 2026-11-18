@@ -14,6 +14,7 @@
 #include "gamemenu.h"
 #include "headless_mode.hpp"
 #include "minitext.h"
+#include "multi.h"
 #include "options.h"
 #include "panels/charpanel.hpp"
 #include "panels/mainpanel.hpp"
@@ -254,6 +255,18 @@ void RestorePanelAreas(const SavedPanelAreas &saved)
 void CalculatePanelAreas()
 {
 	constexpr Size MainPanelSize { 640, 128 };
+
+	// Split screen: the UI coordinate space is one 640x480 client canvas. Every
+	// seat's interface is drawn into such a canvas and then scaled into its cell,
+	// so hit testing and panel drawing must use the same canvas geometry rather
+	// than the physical frame size.
+	if (gbLocalCoopSplitScreen && gbLocalCoopSeats > 1) {
+		MainPanel = { { 0, 480 - MainPanelSize.height }, MainPanelSize };
+		LeftPanel = { { 0, 0 }, SidePanelSize };
+		RightPanel = { { 320, 0 }, SidePanelSize };
+		gnViewportHeight = 480 - MainPanelSize.height;
+		return;
+	}
 
 	MainPanel = {
 		{ (gnScreenWidth - MainPanelSize.width) / 2, gnScreenHeight - MainPanelSize.height },

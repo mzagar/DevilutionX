@@ -90,4 +90,18 @@ void scrollrt_draw_game_screen();
  */
 void DrawAndBlit();
 
+/**
+ * @brief Whether local co-op is currently presenting split-screen seat canvases.
+ */
+bool IsSplitScreenActive();
+
+/**
+ * @brief Map a physical-screen point into seat 0's 640x480 UI canvas.
+ *
+ * In split screen the UI space is one client canvas per seat; the physical
+ * frame is a scaled composite of those canvases. Pointer input arrives in
+ * physical-screen coordinates and must be translated before hit testing.
+ */
+Point ScreenToSeatCanvas(Point screenPosition);
+
 } // namespace devilution

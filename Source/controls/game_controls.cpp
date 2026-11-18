@@ -20,6 +20,7 @@
 #include "doom.h"
 #include "gamemenu.h"
 #include "gmenu.h"
+#include "multi.h"
 #include "options.h"
 #include "panels/quest_log.hpp"
 #include "panels/spell_list.hpp"
@@ -382,6 +383,15 @@ bool HandleControllerButtonEvent(const SDL_Event &event, const ControllerButtonE
 {
 	if (ctrlEvent.button == ControllerButton_IGNORE) {
 		return false;
+	}
+
+	// Local co-op: the shared game UI (inventory, spellbook, speedbook, quest log,
+	// automap, chat, game menu, ...) is owned by seat 0. A pad that belongs to
+	// another seat must never drive it, or one player's button press would open a
+	// panel on everybody's screen. Non-zero seats get their own actions from
+	// plrctrls_after_game_logic().
+	if (gbLocalCoopSeats > 0 && SeatForControllerEvent(event) != 0) {
+		return true;
 	}
 
 	struct ButtonReleaser {
