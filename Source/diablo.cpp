@@ -1952,7 +1952,7 @@ void InitKeymapActions()
 	    N_("Use health potion"),
 	    N_("Use health potions from belt."),
 	    SDLK_UNKNOWN,
-	    [] { UseBeltItem(BeltItemType::Healing); },
+	    [] { UseBeltItem(*MyPlayer, BeltItemType::Healing); },
 	    nullptr,
 	    CanPlayerTakeAction);
 	options.Keymapper.AddAction(
@@ -1960,7 +1960,7 @@ void InitKeymapActions()
 	    N_("Use mana potion"),
 	    N_("Use mana potions from belt."),
 	    SDLK_UNKNOWN,
-	    [] { UseBeltItem(BeltItemType::Mana); },
+	    [] { UseBeltItem(*MyPlayer, BeltItemType::Mana); },
 	    nullptr,
 	    CanPlayerTakeAction);
 	options.Keymapper.AddAction(
@@ -2365,7 +2365,7 @@ void InitPadmapActions()
 	    N_("Use health potion"),
 	    N_("Use health potions from belt."),
 	    ControllerButton_BUTTON_LEFTSHOULDER,
-	    [] { UseBeltItem(BeltItemType::Healing); },
+	    [] { UseBeltItem(*MyPlayer, BeltItemType::Healing); },
 	    nullptr,
 	    CanPlayerTakeAction);
 	options.Padmapper.AddAction(
@@ -2373,7 +2373,7 @@ void InitPadmapActions()
 	    N_("Use mana potion"),
 	    N_("Use mana potions from belt."),
 	    ControllerButton_BUTTON_RIGHTSHOULDER,
-	    [] { UseBeltItem(BeltItemType::Mana); },
+	    [] { UseBeltItem(*MyPlayer, BeltItemType::Mana); },
 	    nullptr,
 	    CanPlayerTakeAction);
 	options.Padmapper.AddAction(

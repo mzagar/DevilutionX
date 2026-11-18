@@ -81,6 +81,8 @@ uint8_t gbLocalCoopSeats;
 uint8_t gbLocalCoopSender;
 bool gbLocalCoopAutoStart;
 bool gbLocalCoopSplitScreen;
+bool gbLocalCoopAutomapActive[4] = {};
+bool gbLocalCoopSpellSelect[4] = {};
 
 /**
  * Contains the set of supported event types supported by the multiplayer

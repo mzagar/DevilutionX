@@ -1900,18 +1900,21 @@ void SetViewGeometry(Size viewSize)
 	gnViewportHeight = static_cast<uint16_t>(viewSize.height);
 }
 
-void RenderSeatView(const Surface &view, Player &player, Point startPosition)
+void RenderSeatView(const Surface &view, Player &player, Point startPosition, bool automapActive)
 {
 	const SavedViewGeometry saved = SaveViewGeometry();
 	SetViewGeometry({ view.w(), view.h() });
 
 	Player *const previousMyPlayer = MyPlayer;
 	MyPlayer = &player;
+	const bool previousAutomap = AutomapActive;
+	AutomapActive = automapActive;
 	RenderingSplitView = true;
 	Displacement offset = {};
 	CalcFirstTilePosition(startPosition, offset);
 	DrawGame(view, startPosition, offset);
 	RenderingSplitView = false;
+	AutomapActive = previousAutomap;
 	MyPlayer = previousMyPlayer;
 
 	RestoreViewGeometry(saved);
@@ -1966,7 +1969,8 @@ void DrawSplitScreen()
 		// clear it first so the uncovered edges are black instead of stale pixels.
 		FillRect(out, cell.position.x, cell.position.y, cell.size.width, cell.size.height, 0);
 		const Surface view = out.subregion(cell.position.x, cell.position.y, cell.size.width, cell.size.height);
-		RenderSeatView(view, player, startPosition);
+		const bool seatAutomap = (seat == 0) ? AutomapActive : gbLocalCoopAutomapActive[seat];
+		RenderSeatView(view, player, startPosition, seatAutomap);
 	}
 	for (int seat = 0; seat < seatCount; seat++)
 		DrawSeatHud(out, Players[seat], layout.cells[seat]);

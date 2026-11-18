@@ -53,6 +53,12 @@ extern bool gbLocalCoopAutoStart;
 // Split each local seat into its own viewport (shared panel) instead of one camera.
 extern bool gbLocalCoopSplitScreen;
 
+// Per-seat UI flags for local co-op.
+// Each seat has its own automap, spell-select, inventory, etc. state
+// so one player's UI never affects another's.
+extern bool gbLocalCoopAutomapActive[4];
+extern bool gbLocalCoopSpellSelect[4];
+
 void SwapGameDataLE(GameData &gameData);
 std::string DescribeLeaveReason(leaveinfo_t leaveReason);
 std::string FormatGameSeed(const uint32_t gameSeed[4]);

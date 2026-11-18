@@ -2107,10 +2107,10 @@ void ProcessGameAction(const GameAction &action)
 	case GameActionType_SEND_KEY:
 		break;
 	case GameActionType_USE_HEALTH_POTION:
-		UseBeltItem(BeltItemType::Healing);
+		UseBeltItem(*MyPlayer, BeltItemType::Healing);
 		break;
 	case GameActionType_USE_MANA_POTION:
-		UseBeltItem(BeltItemType::Mana);
+		UseBeltItem(*MyPlayer, BeltItemType::Mana);
 		break;
 	case GameActionType_PRIMARY_ACTION:
 		PerformPrimaryAction();
@@ -2290,6 +2290,18 @@ void plrctrls_every_frame()
 	ProcessAutomapMovementGamepad();
 }
 
+namespace {
+// Per-seat previous button state for rising-edge detection.
+// The padmapper handles seat 0; we only track seats 1+ here.
+struct PerSeatButtons {
+	bool leftStick;
+	bool leftShoulder;
+	bool rightShoulder;
+	bool buttonA;
+};
+std::array<PerSeatButtons, 4> prevSeatButtons = {};
+} // namespace
+
 void plrctrls_after_game_logic()
 {
 	Movement(*MyPlayer);
@@ -2304,6 +2316,8 @@ void plrctrls_after_game_logic()
 
 		const uint8_t previousSender = gbLocalCoopSender;
 		gbLocalCoopSender = seat;
+
+		// --- Movement & attack (existing) ---
 		const AxisDirection dir = GetLeftStickOrDpadDirectionForSeat(seat, /*usePadmapper=*/false);
 		WalkInDir(player, dir);
 		if (IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_A)) {
@@ -2312,19 +2326,43 @@ void plrctrls_after_game_logic()
 			    : FaceDir[static_cast<std::size_t>(dir.x)][static_cast<std::size_t>(dir.y)];
 			NetSendCmdLoc(seat, true, player.UsesRangedWeapon() ? CMD_RATTACKXY : CMD_SATTACKXY, player.position.future + pdir);
 		}
+
+		// --- Per-seat quick actions (Phase B) ---
+		PerSeatButtons &prev = prevSeatButtons[seat];
+
+		// Automap toggle on left-stick click (rising edge)
+		const bool nowLeftStick = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_LEFTSTICK);
+		if (nowLeftStick && !prev.leftStick) {
+			gbLocalCoopAutomapActive[seat] = !gbLocalCoopAutomapActive[seat];
+		}
+		prev.leftStick = nowLeftStick;
+
+		// Belt use on shoulder buttons (rising edge)
+		const bool nowLeftShoulder = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_LEFTSHOULDER);
+		if (nowLeftShoulder && !prev.leftShoulder) {
+			UseBeltItem(player, BeltItemType::Healing);
+		}
+		prev.leftShoulder = nowLeftShoulder;
+
+		const bool nowRightShoulder = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_RIGHTSHOULDER);
+		if (nowRightShoulder && !prev.rightShoulder) {
+			UseBeltItem(player, BeltItemType::Mana);
+		}
+		prev.rightShoulder = nowRightShoulder;
+
 		gbLocalCoopSender = previousSender;
 	}
 }
 
-void UseBeltItem(BeltItemType type)
+void UseBeltItem(Player &player, BeltItemType type)
 {
 	for (int i = 0; i < MaxBeltItems; i++) {
-		const Item &item = MyPlayer->SpdList[i];
+		const Item &item = player.SpdList[i];
 		if (item.isEmpty()) {
 			continue;
 		}
 
-		const bool isRejuvenation = IsAnyOf(item._iMiscId, IMISC_REJUV, IMISC_FULLREJUV) || (item._iMiscId == IMISC_ARENAPOT && MyPlayer->isOnArenaLevel());
+		const bool isRejuvenation = IsAnyOf(item._iMiscId, IMISC_REJUV, IMISC_FULLREJUV) || (item._iMiscId == IMISC_ARENAPOT && player.isOnArenaLevel());
 		const bool isHealing = isRejuvenation || IsAnyOf(item._iMiscId, IMISC_HEAL, IMISC_FULLHEAL) || item.isScrollOf(SpellID::Healing);
 		const bool isMana = isRejuvenation || IsAnyOf(item._iMiscId, IMISC_MANA, IMISC_FULLMANA);
 
