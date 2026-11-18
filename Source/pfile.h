@@ -107,6 +107,8 @@ void pfile_write_all_heroes(bool writeGameData = false);
 // Co-op session descriptor: persists the seat-to-save mapping across sessions.
 // Written on save, read by the lobby to offer resume.
 bool pfile_save_coop_session_descriptor();
+// Whether the hero archive for a save slot exists on disk.
+bool pfile_save_exists(uint32_t saveNum);
 bool pfile_load_coop_session_descriptor();
 void pfile_clear_coop_session_descriptor();
 

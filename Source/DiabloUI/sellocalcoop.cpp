@@ -12,6 +12,7 @@
 
 #include "DiabloUI/diabloui.h"
 #include "DiabloUI/hero/selhero.h"
+#include "DiabloUI/selok.h"
 #include "DiabloUI/selyesno.h"
 #include "DiabloUI/ui_flags.hpp"
 #include "DiabloUI/ui_item.h"
@@ -177,18 +178,30 @@ bool UiLocalCoopLobbyDialog()
 {
 	// Step 0: check for a saved co-op session to resume
 	if (pfile_load_coop_session_descriptor()) {
-		const bool resume = UiSelHeroYesNoDialog(
-		    _("Resume Co-op Game?").data(),
-		    _("A saved local co-op session was found. Resume it?").data());
-		if (resume) {
-			// The descriptor has restored gbLocalCoopSeats and gbLocalCoopSaveSlot
-			GetOptions().Gameplay.localCoopPlayers.SetValue(static_cast<LocalCoopPlayers>(gbLocalCoopSeats));
-			LoadLocalCoopSettings();
-			gbLocalCoopResume = true;
-			return true;
+		bool resumable = true;
+		for (uint8_t seat = 0; seat < gbLocalCoopSeats; ++seat) {
+			const uint32_t saveNum = gbLocalCoopSaveSlot[seat];
+			if (!pfile_save_exists(saveNum))
+				resumable = false;
 		}
-		// User chose to start fresh; clear the old descriptor
-		pfile_clear_coop_session_descriptor();
+		if (!resumable) {
+			UiSelOkDialog(_("Local Co-op").data(),
+			    _("A saved co-op session was found, but a hero archive is missing. Starting a new session.").data(), false);
+			pfile_clear_coop_session_descriptor();
+		} else {
+			const bool resume = UiSelHeroYesNoDialog(
+			    _("Resume Co-op Game?").data(),
+			    _("A saved local co-op session was found. Resume it?").data());
+			if (resume) {
+				// The descriptor has restored gbLocalCoopSeats and gbLocalCoopSaveSlot
+				GetOptions().Gameplay.localCoopPlayers.SetValue(static_cast<LocalCoopPlayers>(gbLocalCoopSeats));
+				LoadLocalCoopSettings();
+				gbLocalCoopResume = true;
+				return true;
+			}
+			// User chose to start fresh; clear the old descriptor
+			pfile_clear_coop_session_descriptor();
+		}
 	}
 
 	// Step 1: pick seat count
@@ -197,24 +210,39 @@ bool UiLocalCoopLobbyDialog()
 
 	const int seats = selcoop_seats;
 
-	// Step 2: pick a hero for each seat
+	// Step 2: pick a hero for each seat. Two seats must never load the same
+	// archive; that would give two players one hero.
 	for (int seat = 0; seat < seats; ++seat) {
-		_selhero_selections heroResult = SELHERO_NEW_DUNGEON;
-		uint32_t saveNumber = 0;
+		while (true) {
+			_selhero_selections heroResult = SELHERO_NEW_DUNGEON;
+			uint32_t saveNumber = 0;
 
-		UiSelHeroMultDialog(
-		    pfile_ui_set_hero_infos, // fninfo
-		    pfile_ui_save_create,    // fncreate
-		    pfile_delete_save,       // fnremove
-		    pfile_ui_set_class_stats, // fnstats
-		    &heroResult, &saveNumber);
+			UiSelHeroMultDialog(
+			    pfile_ui_set_hero_infos,  // fninfo
+			    pfile_ui_save_create,     // fncreate
+			    pfile_delete_save,        // fnremove
+			    pfile_ui_set_class_stats, // fnstats
+			    &heroResult, &saveNumber);
 
-		if (heroResult == SELHERO_PREVIOUS || saveNumber == 0) {
-			// User cancelled or didn't select a hero
-			return false;
+			if (heroResult == SELHERO_PREVIOUS || saveNumber == 0) {
+				// User cancelled or didn't select a hero
+				return false;
+			}
+
+			bool duplicate = false;
+			for (int other = 0; other < seat; ++other) {
+				if (selcoop_saveNumbers[other] == saveNumber)
+					duplicate = true;
+			}
+			if (duplicate) {
+				UiSelOkDialog(_("Local Co-op").data(),
+				    _("That hero is already playing in this session. Choose a different hero.").data(), false);
+				continue;
+			}
+
+			selcoop_saveNumbers[seat] = saveNumber;
+			break;
 		}
-
-		selcoop_saveNumbers[seat] = saveNumber;
 	}
 
 	// Step 3: configure the session

@@ -882,6 +882,11 @@ void pfile_update(bool forceSave)
 	sfile_write_stash();
 }
 
+bool pfile_save_exists(uint32_t saveNum)
+{
+	return FileExists(GetSavePath(saveNum).c_str());
+}
+
 bool pfile_save_coop_session_descriptor()
 {
 	if (gbLocalCoopSeats == 0)
