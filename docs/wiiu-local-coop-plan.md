@@ -51,15 +51,17 @@ Belt use (heal/mana), spell cast, automap toggle and panel toggles act on the
 seat that pressed them (per-seat flags instead of the global
 `invflag`/`AutomapActive`/... for seats 1+).
 
-### C. Per-seat panels — partially done
+### C. Per-seat panels — done for the core panels
 Inventory, character sheet, spellbook and quest log open inside the owning
-seat's canvas (full 320x352 side panels, correct art, correct data). Remaining:
-- **per-seat pointer/cursor**: only seat 0 has a cursor today, drawn inside its
-  own canvas with pointer input mapped from the physical frame. Seats 1+ see
-  their panels but cannot yet select inside them with their own pad; pad menu
-  navigation still moves the single global cursor.
-- stash/vendor interaction per seat.
-- mouse stays seat 0 (by design).
+seat's canvas (full 320x352 side panels, correct art, correct data) and each
+seat drives them with its own pad and its own cursor
+(`gbLocalCoopCursor[seat]`, in that seat's canvas coordinates). The stick moves
+that seat's cursor, A performs the primary action, B closes that seat's panel.
+Walking/attacking pauses for that seat only — other seats keep playing.
+Seat 0's pointer is mapped from the physical frame into its canvas.
+
+Remaining for full parity: stash/vendor interaction per seat and a visible
+cursor for seats whose pad navigation is not active.
 
 ### D. Pause / menu policy
 Explicit session pause freezes all seats; controller loss handling; the Back
