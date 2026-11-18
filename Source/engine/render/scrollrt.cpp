@@ -1415,7 +1415,8 @@ void DrawView(const Surface &out, Point startPosition)
 
 	DrawDurIcon(out);
 
-	DrawLevelButton(out);
+	if (!RenderingSplitView)
+		DrawLevelButton(out);
 
 	if (CharFlag) {
 		DrawChr(out);
@@ -1906,9 +1907,10 @@ void RenderSeatView(const Surface &view, Player &player, Point startPosition, bo
 	const SavedViewGeometry saved = SaveViewGeometry();
 	SetViewGeometry({ view.w(), view.h() });
 
-	// Recalculate panel areas for this seat's viewport size
+	// Panel geometry for this seat's cell: no reserved panel band (the shared
+	// panel is drawn once for the whole frame), side panels as in-cell overlays.
 	const SavedPanelAreas savedPanels = SavePanelAreas();
-	CalculatePanelAreas();
+	SetSeatPanelAreas({ view.w(), view.h() });
 
 	Player *const previousMyPlayer = MyPlayer;
 	MyPlayer = &player;
@@ -1941,6 +1943,26 @@ void RenderSeatView(const Surface &view, Player &player, Point startPosition, bo
 
 	RestorePanelAreas(savedPanels);
 	RestoreViewGeometry(saved);
+}
+
+/// Per-seat belt strip: the owning seat's potions, drawn inside its own cell.
+void DrawSeatBelt(const Surface &out, const Player &player, const Rectangle &cell)
+{
+	constexpr int SlotSize = 26;
+	constexpr int Gap = 2;
+	const int stripWidth = MaxBeltItems * SlotSize + (MaxBeltItems - 1) * Gap;
+	const int x0 = cell.position.x + (cell.size.width - stripWidth) / 2;
+	const int y0 = cell.position.y + cell.size.height - SlotSize - 4;
+
+	for (int i = 0; i < MaxBeltItems; i++) {
+		const Point position { x0 + i * (SlotSize + Gap), y0 };
+		InvDrawSlotBack(out, position, { SlotSize, SlotSize }, ITEM_QUALITY_NORMAL);
+		const Item &item = player.SpdList[i];
+		if (item.isEmpty())
+			continue;
+		const ClxSprite sprite = GetInvItemSprite(item._iCurs + CURSOR_FIRSTITEM);
+		DrawItem(item, out, position, sprite);
+	}
 }
 
 /// Per-seat status HUD: name, HP/MP values and compact resource bars.
@@ -1999,8 +2021,10 @@ void DrawSplitScreen()
 		    (seat == 0) ? SpellbookFlag : gbLocalCoopSpellbookFlag[seat],
 		    (seat == 0) ? QuestLogIsOpen : gbLocalCoopQuestLogOpen[seat]);
 	}
-	for (int seat = 0; seat < seatCount; seat++)
+	for (int seat = 0; seat < seatCount; seat++) {
 		DrawSeatHud(out, Players[seat], layout.cells[seat]);
+		DrawSeatBelt(out, Players[seat], layout.cells[seat]);
+	}
 
 	// The split views end above the panel. Black out the shared panel band first:
 	// the area left and right of the 640-wide panel would otherwise keep stale
