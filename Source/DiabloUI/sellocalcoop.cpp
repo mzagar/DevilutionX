@@ -12,6 +12,7 @@
 
 #include "DiabloUI/diabloui.h"
 #include "DiabloUI/hero/selhero.h"
+#include "DiabloUI/selyesno.h"
 #include "DiabloUI/ui_flags.hpp"
 #include "DiabloUI/ui_item.h"
 #include "control/control.hpp"
@@ -19,6 +20,7 @@
 #include "engine/point.hpp"
 #include "multi.h"
 #include "options.h"
+#include "pfile.h"
 #include "pfile.h"
 #include "utils/language.h"
 #include "utils/sdl_geometry.h"
@@ -106,6 +108,22 @@ bool SelcoopSelectSeats()
 
 bool UiLocalCoopLobbyDialog()
 {
+	// Step 0: check for a saved co-op session to resume
+	if (pfile_load_coop_session_descriptor()) {
+		const bool resume = UiSelHeroYesNoDialog(
+		    _("Resume Co-op Game?").data(),
+		    _("A saved local co-op session was found. Resume it?").data());
+		if (resume) {
+			// The descriptor has restored gbLocalCoopSeats and gbLocalCoopSaveSlot
+			GetOptions().Gameplay.localCoopPlayers.SetValue(static_cast<LocalCoopPlayers>(gbLocalCoopSeats));
+			LoadLocalCoopSettings();
+			gbLocalCoopResume = true;
+			return true;
+		}
+		// User chose to start fresh; clear the old descriptor
+		pfile_clear_coop_session_descriptor();
+	}
+
 	// Step 1: pick seat count
 	if (!SelcoopSelectSeats())
 		return false; // cancelled
@@ -141,6 +159,9 @@ bool UiLocalCoopLobbyDialog()
 	for (int seat = 0; seat < seats; ++seat) {
 		gbLocalCoopSaveSlot[seat] = selcoop_saveNumbers[seat];
 	}
+
+	// Clear any stale session descriptor (fresh session)
+	pfile_clear_coop_session_descriptor();
 
 	return true;
 }

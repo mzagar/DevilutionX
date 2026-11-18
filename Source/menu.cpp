@@ -194,8 +194,10 @@ void mainmenu_loop()
 			break;
 		case MAINMENU_LOCAL_COOP:
 			if (UiLocalCoopLobbyDialog()) {
-				if (!StartGame(true, true))
+				// gbLocalCoopResume is set by the lobby when resuming a saved session
+				if (!StartGame(!gbLocalCoopResume, true))
 					done = true;
+				gbLocalCoopResume = false; // reset for next lobby visit
 			}
 			break;
 		case MAINMENU_ATTRACT_MODE:

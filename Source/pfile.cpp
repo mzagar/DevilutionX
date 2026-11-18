@@ -684,6 +684,9 @@ void pfile_write_all_heroes(bool writeGameData)
 	gSaveNumber = previousSaveNumber;
 	MyPlayer = previousMyPlayer;
 
+	// Persist the session descriptor so the lobby can offer resume
+	pfile_save_coop_session_descriptor();
+
 #ifdef __EMSCRIPTEN__
 	emscripten_run_script("if (typeof Module !== 'undefined' && Module.saveToIndexedDB) Module.saveToIndexedDB();");
 #endif
@@ -877,6 +880,63 @@ void pfile_update(bool forceSave)
 	else
 		pfile_write_hero();
 	sfile_write_stash();
+}
+
+bool pfile_save_coop_session_descriptor()
+{
+	if (gbLocalCoopSeats == 0)
+		return false;
+	const std::string path = StrCat(paths::PrefPath(), "local_coop_session.ini");
+	FILE *file = OpenFile(path.c_str(), "wb");
+	if (file == nullptr)
+		return false;
+	std::fprintf(file, "seats=%u\n", static_cast<unsigned>(gbLocalCoopSeats));
+	std::fprintf(file, "split=%d\n", gbLocalCoopSplitScreen ? 1 : 0);
+	for (uint8_t seat = 0; seat < gbLocalCoopSeats; ++seat) {
+		const uint32_t saveNum = gbLocalCoopSaveSlot[seat] != 0 ? gbLocalCoopSaveSlot[seat] : seat;
+		std::fprintf(file, "save%u=%u\n", static_cast<unsigned>(seat), static_cast<unsigned>(saveNum));
+	}
+	std::fclose(file);
+	return true;
+}
+
+bool pfile_load_coop_session_descriptor()
+{
+	const std::string path = StrCat(paths::PrefPath(), "local_coop_session.ini");
+	FILE *file = OpenFile(path.c_str(), "rb");
+	if (file == nullptr)
+		return false;
+	unsigned seats = 0;
+	char line[256];
+	uint32_t saveSlots[4] = {};
+	bool gotSeats = false;
+	while (std::fgets(line, sizeof(line), file) != nullptr) {
+		int seatIdx = -1;
+		unsigned saveNum = 0;
+		if (std::sscanf(line, "seats=%u", &seats) == 1) {
+			if (seats >= 2 && seats <= MAX_PLRS)
+				gotSeats = true;
+		} else if (std::sscanf(line, "save%u=%u", &seatIdx, &saveNum) >= 2) {
+			if (seatIdx >= 0 && seatIdx < 4)
+				saveSlots[seatIdx] = saveNum;
+		}
+	}
+	std::fclose(file);
+
+	if (!gotSeats || seats == 0)
+		return false;
+
+	gbLocalCoopSeats = static_cast<uint8_t>(seats);
+	for (uint8_t i = 0; i < seats; ++i) {
+		gbLocalCoopSaveSlot[i] = saveSlots[i];
+	}
+	return true;
+}
+
+void pfile_clear_coop_session_descriptor()
+{
+	const std::string path = StrCat(paths::PrefPath(), "local_coop_session.ini");
+	RemoveFile(path.c_str());
 }
 
 } // namespace devilution

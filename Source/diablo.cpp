@@ -2751,7 +2751,7 @@ bool StartGame(bool bNewGame, bool bSinglePlayer)
 	ReturnToMainMenu = false;
 
 	do {
-		gbLoadGame = false;
+		gbLoadGame = gbLocalCoopResume;
 
 		if (bSinglePlayer)
 			LoadLocalCoopSettings();
@@ -2767,7 +2767,7 @@ bool StartGame(bool bNewGame, bool bSinglePlayer)
 
 		gbSelectProvider = false;
 
-		if (bNewGame || !gbValidSaveFile) {
+		if ((bNewGame && !gbLocalCoopResume) || !gbValidSaveFile) {
 			InitLevels();
 			InitQuests();
 			InitPortals();

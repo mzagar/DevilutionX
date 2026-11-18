@@ -81,6 +81,7 @@ uint8_t gbLocalCoopSeats;
 uint8_t gbLocalCoopSender;
 bool gbLocalCoopAutoStart;
 bool gbLocalCoopSplitScreen;
+bool gbLocalCoopResume;
 uint32_t gbLocalCoopSaveSlot[4] = {};
 bool gbLocalCoopAutomapActive[4] = {};
 bool gbLocalCoopSpellSelect[4] = {};

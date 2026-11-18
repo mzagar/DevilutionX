@@ -104,6 +104,12 @@ void pfile_write_hero(bool writeGameData = false);
 // Game data (world) is saved once with seat 0's save when writeGameData is true.
 void pfile_write_all_heroes(bool writeGameData = false);
 
+// Co-op session descriptor: persists the seat-to-save mapping across sessions.
+// Written on save, read by the lobby to offer resume.
+bool pfile_save_coop_session_descriptor();
+bool pfile_load_coop_session_descriptor();
+void pfile_clear_coop_session_descriptor();
+
 #ifndef DISABLE_DEMOMODE
 /**
  * @brief Save a reference game-state (save game) for the demo recording

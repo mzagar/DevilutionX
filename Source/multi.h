@@ -52,6 +52,7 @@ extern uint8_t gbLocalCoopSender;
 extern bool gbLocalCoopAutoStart;
 // Split each local seat into its own viewport (shared panel) instead of one camera.
 extern bool gbLocalCoopSplitScreen;
+extern bool gbLocalCoopResume;
 
 // Per-seat hero save slot numbers (set by the lobby, used by InitLocalCoop).
 extern uint32_t gbLocalCoopSaveSlot[4];
