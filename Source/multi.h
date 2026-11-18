@@ -53,6 +53,9 @@ extern bool gbLocalCoopAutoStart;
 // Split each local seat into its own viewport (shared panel) instead of one camera.
 extern bool gbLocalCoopSplitScreen;
 
+// Per-seat hero save slot numbers (set by the lobby, used by InitLocalCoop).
+extern uint32_t gbLocalCoopSaveSlot[4];
+
 // Per-seat UI flags for local co-op.
 // Each seat has its own automap, spell-select, inventory, etc. state
 // so one player's UI never affects another's.

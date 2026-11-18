@@ -59,6 +59,7 @@ set(libdevilutionx_SRCS
   DiabloUI/progress.cpp
   DiabloUI/scrollbar.cpp
   DiabloUI/selok.cpp
+  DiabloUI/sellocalcoop.cpp
   DiabloUI/selstart.cpp
   DiabloUI/selyesno.cpp
   DiabloUI/settingsmenu.cpp

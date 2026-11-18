@@ -18,6 +18,7 @@
 
 #include "DiabloUI/diabloui.h"
 #include "DiabloUI/selok.h"
+#include "DiabloUI/sellocalcoop.h"
 #include "DiabloUI/settingsmenu.h"
 #include "engine/assets.hpp"
 #include "engine/demomode.h"
@@ -190,6 +191,12 @@ void mainmenu_loop()
 		case MAINMENU_MULTIPLAYER:
 			if (!InitMultiPlayerMenu())
 				done = true;
+			break;
+		case MAINMENU_LOCAL_COOP:
+			if (UiLocalCoopLobbyDialog()) {
+				if (!StartGame(true, true))
+					done = true;
+			}
 			break;
 		case MAINMENU_ATTRACT_MODE:
 			if (gbIsSpawn && !HaveIntro())

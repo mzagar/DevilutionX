@@ -81,6 +81,7 @@ uint8_t gbLocalCoopSeats;
 uint8_t gbLocalCoopSender;
 bool gbLocalCoopAutoStart;
 bool gbLocalCoopSplitScreen;
+uint32_t gbLocalCoopSaveSlot[4] = {};
 bool gbLocalCoopAutomapActive[4] = {};
 bool gbLocalCoopSpellSelect[4] = {};
 bool gbLocalCoopInvFlag[4] = {};
@@ -659,9 +660,14 @@ bool InitLocalCoop(GameData *gameData, uint8_t seats)
 
 	// Seat 0 is the camera/UI owner; the other seats are local players whose
 	// commands are injected through the loopback provider with their own sender id.
+	// If the lobby set per-seat save slots, use those; otherwise fall back to
+	// sequential slots (the dev/test path via Settings / local_coop.ini).
 	for (uint8_t seat = 0; seat < seats; ++seat) {
-		gSaveNumber = seat;
-		pfile_read_player_from_save(seat, Players[seat]);
+		uint32_t saveNum = gbLocalCoopSaveSlot[seat];
+		if (saveNum == 0)
+			saveNum = seat;
+		gSaveNumber = saveNum;
+		pfile_read_player_from_save(saveNum, Players[seat]);
 		Players[seat].plractive = true;
 		ResetPlayerGFX(Players[seat]);
 	}
@@ -669,7 +675,7 @@ bool InitLocalCoop(GameData *gameData, uint8_t seats)
 	gbActivePlayers = seats;
 	// Loading the seats moved gSaveNumber to the last one; autosave and exit must
 	// keep writing the camera owner's character to its own archive.
-	gSaveNumber = MyPlayerId;
+	gSaveNumber = gbLocalCoopSaveSlot[MyPlayerId] != 0 ? gbLocalCoopSaveSlot[MyPlayerId] : MyPlayerId;
 	Log("Local co-op session with {} seats (screen {}x{}, viewport {})", seats, gnScreenWidth, gnScreenHeight, gnViewportHeight);
 	return true;
 }
