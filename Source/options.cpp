@@ -860,6 +860,13 @@ GameplayOptions::GameplayOptions()
               { PartyPortraits::Summons, N_("Summons") },
               { PartyPortraits::PlayersAndSummons, N_("Players and summons") },
           })
+    , localCoopPlayers("Local Co-op Players", OptionEntryFlags::None, N_("Local Co-op Players"), N_("Number of local players sharing this world. Takes effect on the next game."), LocalCoopPlayers::One,
+          {
+              { LocalCoopPlayers::One, N_("1 player") },
+              { LocalCoopPlayers::Two, N_("2 players") },
+              { LocalCoopPlayers::Three, N_("3 players") },
+              { LocalCoopPlayers::Four, N_("4 players") },
+          })
     , enemyHealthBar("Enemy Health Bar", OptionEntryFlags::None, N_("Enemy Health Bar"), N_("Enemy Health Bar is displayed at the top of the screen."), false)
     , floatingInfoBox("Floating Item Info Box", OptionEntryFlags::None, N_("Floating Item Info Box"), N_("Displays item info in a floating box when hovering over an item."), false)
     , autoGoldPickup("Auto Gold Pickup", OptionEntryFlags::None, N_("Auto Gold Pickup"), N_("Gold is automatically collected when in close proximity to the player."), false)
@@ -912,6 +919,7 @@ std::vector<OptionEntryBase *> GameplayOptions::GetEntries()
 		&showHealthValues,
 		&showManaValues,
 		&showMultiplayerPartyInfo,
+		&localCoopPlayers,
 		&enemyHealthBar,
 		&showMonsterType,
 		&showItemLabels,

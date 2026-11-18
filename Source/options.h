@@ -99,6 +99,13 @@ enum class StoreUi : uint8_t {
 	VisualGrid = 2,
 };
 
+enum class LocalCoopPlayers : uint8_t {
+	One = 1,
+	Two = 2,
+	Three = 3,
+	Four = 4,
+};
+
 enum class PartyPortraits : uint8_t {
 	/** @brief No party portraits. */
 	Disabled = 0,
@@ -608,6 +615,8 @@ struct GameplayOptions : OptionCategoryBase {
 	OptionEntryBoolean showManaValues;
 	/** @brief Enable the multiplayer party information display */
 	OptionEntryEnum<PartyPortraits> showMultiplayerPartyInfo;
+	/** @brief Number of local players sharing this world (local co-op). */
+	OptionEntryEnum<LocalCoopPlayers> localCoopPlayers;
 	/** @brief Show enemy health at the top of the screen. */
 	OptionEntryBoolean enemyHealthBar;
 	/** @brief Displays item info in a floating box when hovering over an ite. */

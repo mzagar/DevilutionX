@@ -575,40 +575,53 @@ void LoadLocalCoopSettings()
 	gbLocalCoopAutoStart = false;
 	gbLocalCoopSplitScreen = false;
 
+	// The Settings -> Gameplay option is authoritative. local_coop.ini can
+	// override the seat count for scripted console tests and carries the
+	// AutoStart/SplitScreen dev switches.
+	int seats = static_cast<int>(*GetOptions().Gameplay.localCoopPlayers);
+	bool autoStart = false;
+	bool splitScreen = true;
+
 	const std::string path = StrCat(paths::PrefPath(), "local_coop.ini");
 	FILE *file = OpenFile(path.c_str(), "rb");
-	if (file == nullptr)
-		return;
-	uintmax_t size = 0;
-	std::vector<char> buffer;
-	if (GetFileSize(path.c_str(), &size) && size > 0 && size < 64 * 1024) {
-		buffer.resize(static_cast<size_t>(size));
-		if (std::fread(buffer.data(), buffer.size(), 1, file) != 1)
-			buffer.clear();
-	}
-	std::fclose(file);
-	if (buffer.empty())
-		return;
+	if (file != nullptr) {
+		uintmax_t size = 0;
+		std::vector<char> buffer;
+		if (GetFileSize(path.c_str(), &size) && size > 0 && size < 64 * 1024) {
+			buffer.resize(static_cast<size_t>(size));
+			if (std::fread(buffer.data(), buffer.size(), 1, file) != 1)
+				buffer.clear();
+		}
+		std::fclose(file);
 
-	std::expected<Ini, std::string> parsed = Ini::parse(std::string_view(buffer.data(), buffer.size()));
-	if (!parsed.has_value()) {
-		LogError("local_coop.ini: {}", parsed.error());
-		return;
+		if (!buffer.empty()) {
+			std::expected<Ini, std::string> parsed = Ini::parse(std::string_view(buffer.data(), buffer.size()));
+			if (!parsed.has_value()) {
+				LogError("local_coop.ini: {}", parsed.error());
+			} else {
+				// Parse without Ini::getInt(): a malformed hand-edited value must
+				// not abort the game. Anything that is not 2..MAX_PLRS is ignored.
+				std::string_view seatsValue = parsed->getString("LocalCoop", "Seats");
+				while (!seatsValue.empty() && (seatsValue.front() == ' ' || seatsValue.front() == '\t'))
+					seatsValue.remove_prefix(1);
+				while (!seatsValue.empty() && (seatsValue.back() == ' ' || seatsValue.back() == '\t'))
+					seatsValue.remove_suffix(1);
+				int iniSeats = 0;
+				const char *const begin = seatsValue.data();
+				const auto [end, error] = std::from_chars(begin, begin + seatsValue.size(), iniSeats);
+				if (error == std::errc() && end == begin + seatsValue.size() && iniSeats >= 2 && iniSeats <= MAX_PLRS)
+					seats = iniSeats;
+				autoStart = parsed->getBool("LocalCoop", "AutoStart", false);
+				splitScreen = parsed->getBool("LocalCoop", "SplitScreen", true);
+			}
+		}
 	}
-	// Parse without Ini::getInt(): a malformed hand-edited value must not abort
-	// the game. Anything that is not 2..MAX_PLRS keeps single-player behaviour.
-	std::string_view seatsValue = parsed->getString("LocalCoop", "Seats");
-	while (!seatsValue.empty() && (seatsValue.front() == ' ' || seatsValue.front() == '\t'))
-		seatsValue.remove_prefix(1);
-	while (!seatsValue.empty() && (seatsValue.back() == ' ' || seatsValue.back() == '\t'))
-		seatsValue.remove_suffix(1);
-	int seats = 0;
-	const char *const begin = seatsValue.data();
-	const auto [end, error] = std::from_chars(begin, begin + seatsValue.size(), seats);
-	if (error == std::errc() && end == begin + seatsValue.size() && seats >= 2 && seats <= MAX_PLRS)
+
+	if (seats >= 2 && seats <= MAX_PLRS) {
 		gbLocalCoopSeats = static_cast<uint8_t>(seats);
-	gbLocalCoopAutoStart = gbLocalCoopSeats != 0 && parsed->getBool("LocalCoop", "AutoStart", false);
-	gbLocalCoopSplitScreen = gbLocalCoopSeats != 0 && parsed->getBool("LocalCoop", "SplitScreen", true);
+		gbLocalCoopAutoStart = autoStart;
+		gbLocalCoopSplitScreen = splitScreen;
+	}
 	if (gbLocalCoopSeats != 0)
 		Log("Local co-op: {} seats (autostart={}, split={})", gbLocalCoopSeats, gbLocalCoopAutoStart, gbLocalCoopSplitScreen);
 }

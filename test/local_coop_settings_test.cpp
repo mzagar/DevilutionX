@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include "multi.h"
+#include "options.h"
 #include "utils/paths.h"
 
 namespace devilution {
@@ -24,6 +25,7 @@ protected:
 	{
 		gbLocalCoopSeats = 0;
 		gbLocalCoopAutoStart = false;
+		GetOptions().Gameplay.localCoopPlayers.SetValue(LocalCoopPlayers::One);
 		std::filesystem::remove_all(dir_);
 	}
 
@@ -37,6 +39,14 @@ protected:
 
 	std::filesystem::path dir_;
 };
+
+TEST_F(LocalCoopSettings, MenuOptionSelectsTwoSeats)
+{
+	GetOptions().Gameplay.localCoopPlayers.SetValue(LocalCoopPlayers::Two);
+	LoadLocalCoopSettings();
+	EXPECT_EQ(gbLocalCoopSeats, 2);
+	GetOptions().Gameplay.localCoopPlayers.SetValue(LocalCoopPlayers::One);
+}
 
 TEST_F(LocalCoopSettings, MissingFileKeepsOneSeat)
 {
