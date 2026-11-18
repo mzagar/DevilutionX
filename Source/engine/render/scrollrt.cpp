@@ -2037,10 +2037,17 @@ void RenderSeatCanvas(int seat)
 	DrawInvBelt(canvas);
 	DrawXPBar(canvas);
 
-	// Seat 0 owns the mouse cursor; draw it inside its own canvas so it is scaled
-	// and positioned together with the panel it points at.
-	if (seat == 0)
+	// Each seat has its own cursor inside its own canvas, so it is scaled and
+	// positioned together with the panel it points at. Seat 0 uses the pointer.
+	if (seat != 0) {
+		const Point savedCursor = MousePosition;
+		MousePosition = gbLocalCoopCursor[seat];
 		DrawCursor(canvas);
+		MousePosition = savedCursor;
+	} else {
+		gbLocalCoopCursor[0] = MousePosition;
+		DrawCursor(canvas);
+	}
 
 	RenderingSplitView = false;
 

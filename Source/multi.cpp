@@ -84,6 +84,7 @@ bool gbLocalCoopSplitScreen;
 bool gbLocalCoopResume;
 uint32_t gbLocalCoopSaveSlot[4] = {};
 bool gbLocalCoopAutomapActive[4] = {};
+Point gbLocalCoopCursor[4] = {};
 bool gbLocalCoopSpellSelect[4] = {};
 bool gbLocalCoopInvFlag[4] = {};
 bool gbLocalCoopCharFlag[4] = {};
@@ -674,6 +675,8 @@ bool InitLocalCoop(GameData *gameData, uint8_t seats)
 	}
 
 	gbActivePlayers = seats;
+	for (uint8_t seat = 0; seat < seats; ++seat)
+		gbLocalCoopCursor[seat] = { 320, 240 };
 	// Loading the seats moved gSaveNumber to the last one; autosave and exit must
 	// keep writing the camera owner's character to its own archive.
 	gSaveNumber = gbLocalCoopSaveSlot[MyPlayerId] != 0 ? gbLocalCoopSaveSlot[MyPlayerId] : MyPlayerId;

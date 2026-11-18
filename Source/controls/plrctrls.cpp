@@ -2297,12 +2297,78 @@ struct PerSeatButtons {
 	bool leftStick;
 	bool leftShoulder;
 	bool rightShoulder;
+	bool buttonA;
 	bool buttonB;
 	bool buttonX;
 	bool leftTrigger;
 	bool rightTrigger;
 };
 std::array<PerSeatButtons, 4> prevSeatButtons = {};
+
+/// True while this seat has one of its own panels open.
+bool SeatPanelOpen(uint8_t seat)
+{
+	return gbLocalCoopInvFlag[seat] || gbLocalCoopCharFlag[seat]
+	    || gbLocalCoopSpellbookFlag[seat] || gbLocalCoopQuestLogOpen[seat];
+}
+
+/**
+ * @brief Drive one seat's own panel with its own pad and its own cursor.
+ *
+ * The panel handlers read the global MousePosition and MyPlayer, so the seat's
+ * cursor and player are swapped in for the duration of the call and the updated
+ * cursor position is stored back for that seat.
+ */
+void ProcessSeatPanelInput(uint8_t seat, Player &player, AxisDirection dir, bool pressedA, bool pressedB)
+{
+	const Point savedCursor = MousePosition;
+	Player *const savedMyPlayer = MyPlayer;
+	const uint8_t savedMyPlayerId = MyPlayerId;
+	const bool savedInv = invflag;
+	const bool savedChar = CharFlag;
+	const bool savedBook = SpellbookFlag;
+	const bool savedQuest = QuestLogIsOpen;
+
+	MousePosition = gbLocalCoopCursor[seat];
+	MyPlayer = &player;
+	MyPlayerId = seat;
+	invflag = gbLocalCoopInvFlag[seat];
+	CharFlag = gbLocalCoopCharFlag[seat];
+	SpellbookFlag = gbLocalCoopSpellbookFlag[seat];
+	QuestLogIsOpen = gbLocalCoopQuestLogOpen[seat];
+
+	if (dir.x != AxisDirectionX_NONE || dir.y != AxisDirectionY_NONE) {
+		if (invflag)
+			CheckInventoryMove(dir);
+		else if (CharFlag && MyPlayer->_pStatPts > 0)
+			AttrIncBtnSnap(dir);
+		else if (QuestLogIsOpen)
+			QuestLogMove(dir);
+		else if (SpellbookFlag)
+			SpellBookMove(dir);
+	}
+
+	if (pressedA)
+		PerformPrimaryAction();
+
+	if (pressedB) {
+		// Back closes this seat's panel, and only this seat's.
+		gbLocalCoopInvFlag[seat] = false;
+		gbLocalCoopCharFlag[seat] = false;
+		gbLocalCoopSpellbookFlag[seat] = false;
+		gbLocalCoopQuestLogOpen[seat] = false;
+	}
+
+	gbLocalCoopCursor[seat] = MousePosition;
+
+	MousePosition = savedCursor;
+	MyPlayer = savedMyPlayer;
+	MyPlayerId = savedMyPlayerId;
+	invflag = savedInv;
+	CharFlag = savedChar;
+	SpellbookFlag = savedBook;
+	QuestLogIsOpen = savedQuest;
+}
 } // namespace
 
 void plrctrls_after_game_logic()
@@ -2322,14 +2388,33 @@ void plrctrls_after_game_logic()
 		Player *const previousMyPlayer = MyPlayer;
 		MyPlayer = &player;
 
-		// --- Movement ---
 		const AxisDirection dir = GetLeftStickOrDpadDirectionForSeat(seat, /*usePadmapper=*/false);
+		PerSeatButtons &prev = prevSeatButtons[seat];
+		const bool nowA = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_A);
+		const bool nowB = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_B);
+
+		// A seat's own panel takes over its input, exactly like seat 0: the stick
+		// moves that seat's cursor, A selects and B closes the panel.
+		if (SeatPanelOpen(seat)) {
+			ProcessSeatPanelInput(seat, player, dir, nowA && !prev.buttonA, nowB && !prev.buttonB);
+			prev.buttonA = nowA;
+			prev.buttonB = nowB;
+			prev.buttonX = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_X);
+			prev.leftStick = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_LEFTSTICK);
+			prev.leftShoulder = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_LEFTSHOULDER);
+			prev.rightShoulder = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_RIGHTSHOULDER);
+			prev.leftTrigger = IsControllerButtonPressedOnSeat(seat, ControllerButton_AXIS_TRIGGERLEFT);
+			prev.rightTrigger = IsControllerButtonPressedOnSeat(seat, ControllerButton_AXIS_TRIGGERRIGHT);
+			MyPlayer = previousMyPlayer;
+			gbLocalCoopSender = previousSender;
+			continue;
+		}
+		prev.buttonA = nowA;
+
+		// --- Movement ---
 		WalkInDir(player, dir);
 
-		PerSeatButtons &prev = prevSeatButtons[seat];
-
 		// --- Attack on B (matching padmapper PrimaryAction) ---
-		const bool nowB = IsControllerButtonPressedOnSeat(seat, ControllerButton_BUTTON_B);
 		if (nowB) {
 			const Direction pdir = (dir.x == AxisDirectionX_NONE && dir.y == AxisDirectionY_NONE)
 			    ? player._pdir

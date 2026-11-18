@@ -11,6 +11,7 @@
 #include <vector>
 
 #include "dvlnet/leaveinfo.hpp"
+#include "engine/point.hpp"
 #include "game_mode.hpp"
 #include "msg.h"
 namespace devilution {
@@ -61,6 +62,8 @@ extern uint32_t gbLocalCoopSaveSlot[4];
 // Each seat has its own automap, spell-select, inventory, etc. state
 // so one player's UI never affects another's.
 extern bool gbLocalCoopAutomapActive[4];
+// Per-seat software cursor position inside that seat's 640x480 client canvas.
+extern Point gbLocalCoopCursor[4];
 extern bool gbLocalCoopSpellSelect[4];
 extern bool gbLocalCoopInvFlag[4];
 extern bool gbLocalCoopCharFlag[4];
