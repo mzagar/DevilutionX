@@ -60,8 +60,17 @@ that seat's cursor, A performs the primary action, B closes that seat's panel.
 Walking/attacking pauses for that seat only — other seats keep playing.
 Seat 0's pointer is mapped from the physical frame into its canvas.
 
-Remaining for full parity: stash/vendor interaction per seat and a visible
-cursor for seats whose pad navigation is not active.
+Pointer input in split screen is mapped from the physical frame into the seat
+canvas under the pointer, so a click acts on the player whose screen it landed
+on; panel changes made that way are written back to that seat. A small cross
+marks the exact hit-test hotspot because the canvas is scaled down (a panel
+button is only ~13 physical pixels tall at 853x480 with two seats).
+
+Diagnostics: `DebugPointer=1` in `<pref>/local_coop.ini` logs every split
+click with the physical point, the resolved seat, the canvas rectangle and the
+mapped canvas point.
+
+Remaining for full parity: stash/vendor interaction per seat.
 
 ### D. Pause / menu policy
 Explicit session pause freezes all seats; controller loss handling; the Back
