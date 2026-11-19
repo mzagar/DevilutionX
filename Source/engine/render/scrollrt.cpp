@@ -80,6 +80,8 @@
 #include "towners.h"
 #include "utils/attributes.h"
 #include "utils/display.h"
+#include "utils/file_util.h"
+#include "utils/paths.h"
 #include "utils/is_of.hpp"
 #include "utils/log.hpp"
 #include "utils/sdl_compat.h"
@@ -2045,6 +2047,14 @@ void RenderSeatCanvas(int seat)
 			gbLocalCoopCursor[0] = MousePosition;
 		MousePosition = gbLocalCoopCursor[seat];
 		DrawCursor(canvas);
+		// Mark the exact hit-test hotspot. The cursor CLX art is anchored at
+		// MousePosition (its top-left), which is not obvious when the whole canvas
+		// is scaled down; without this the buttons are easy to miss by a few pixels.
+		const Point hotspot = MousePosition;
+		if (hotspot.x > 2 && hotspot.y > 2 && hotspot.x < canvas.w() - 3 && hotspot.y < canvas.h() - 3) {
+			FillRect(canvas, hotspot.x - 3, hotspot.y, 7, 1, PAL8_YELLOW + 4);
+			FillRect(canvas, hotspot.x, hotspot.y - 3, 1, 7, PAL8_YELLOW + 4);
+		}
 		MousePosition = savedCursor;
 	}
 
@@ -2127,12 +2137,25 @@ bool IsSplitScreenActive()
 	return gbLocalCoopSplitSeatCount > 1;
 }
 
+/// Destination rectangle of a seat canvas for the *current* frame layout.
+///
+/// Computed on demand instead of read from the last composed frame so pointer
+/// input can never use a stale layout (for example right after a seat count
+/// change or when the first click arrives before the first split frame).
+Rectangle SeatCanvasRectNow(int seat)
+{
+	const ViewLayout layout = CalculateViewLayout({ gnScreenWidth, gnScreenHeight }, gbLocalCoopSeats, 0);
+	if (seat < 0 || seat >= static_cast<int>(layout.cells.size()))
+		return {};
+	return FitSeatCanvas(layout.cells[seat]);
+}
+
 int SeatForScreenPoint(Point screenPosition)
 {
 	if (!IsSplitScreenActive())
 		return -1;
 	for (int seat = 0; seat < gbLocalCoopSplitSeatCount; seat++) {
-		const Rectangle &rect = SplitSeatCanvasRects[seat];
+		const Rectangle rect = SeatCanvasRectNow(seat);
 		if (rect.size.width <= 0 || rect.size.height <= 0)
 			continue;
 		if (screenPosition.x >= rect.position.x && screenPosition.x < rect.position.x + rect.size.width
@@ -2142,13 +2165,45 @@ int SeatForScreenPoint(Point screenPosition)
 	return -1;
 }
 
+/// Diagnostics for split-screen pointer mapping (see local_coop.ini DebugPointer).
+bool SplitPointerDebugEnabled()
+{
+	static const bool enabled = [] {
+		FILE *file = OpenFile(StrCat(paths::PrefPath(), "local_coop.ini").c_str(), "rb");
+		if (file == nullptr)
+			return false;
+		char line[256];
+		bool result = false;
+		while (std::fgets(line, sizeof(line), file) != nullptr) {
+			if (std::strstr(line, "DebugPointer=1") != nullptr)
+				result = true;
+		}
+		std::fclose(file);
+		return result;
+	}();
+	return enabled;
+}
+
+void LogSplitPointer(const char *what, Point screenPosition)
+{
+	if (!SplitPointerDebugEnabled())
+		return;
+	const int seat = SeatForScreenPoint(screenPosition);
+	const Rectangle rect = SeatCanvasRectNow(seat < 0 ? 0 : seat);
+	const Point mapped = ScreenToSeatCanvas(screenPosition, seat < 0 ? 0 : seat);
+	Log("SplitPointer {}: screen=({},{}) seat={} rect=({},{},{},{}) mapped=({},{}) screenSize={}x{}",
+	    what, screenPosition.x, screenPosition.y, seat,
+	    rect.position.x, rect.position.y, rect.size.width, rect.size.height,
+	    mapped.x, mapped.y, gnScreenWidth, gnScreenHeight);
+}
+
 Point ScreenToSeatCanvas(Point screenPosition, int seat)
 {
 	if (!IsSplitScreenActive())
 		return screenPosition;
 	if (seat < 0 || seat >= 4)
 		seat = 0;
-	const Rectangle &rect = SplitSeatCanvasRects[seat];
+	const Rectangle rect = SeatCanvasRectNow(seat);
 	if (rect.size.width <= 0 || rect.size.height <= 0)
 		return screenPosition;
 	const int x = std::clamp((screenPosition.x - rect.position.x) * SeatCanvasSize.width / rect.size.width, 0, SeatCanvasSize.width - 1);

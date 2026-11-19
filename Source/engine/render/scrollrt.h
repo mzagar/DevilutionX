@@ -110,4 +110,7 @@ int SeatForScreenPoint(Point screenPosition);
 /// Map a physical-screen point into a specific seat's canvas.
 Point ScreenToSeatCanvas(Point screenPosition, int seat);
 
+/// Diagnostics: log a split-screen pointer sample when DebugPointer is enabled.
+void LogSplitPointer(const char *what, Point screenPosition);
+
 } // namespace devilution

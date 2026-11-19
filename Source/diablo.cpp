@@ -883,6 +883,7 @@ void GameEventHandler(const SDL_Event &event, uint16_t modState)
 		const Point screenPosition { SDLC_EventButtonIntX(event), SDLC_EventButtonIntY(event) };
 		const int pointerSeat = SeatForScreenPoint(screenPosition);
 		gbLocalCoopPointerSeat = pointerSeat < 0 ? 0 : pointerSeat;
+		LogSplitPointer("down", screenPosition);
 		SeatUiContext seatContext(gbLocalCoopPointerSeat);
 		// The click position wins over the seat's stored cursor, and the context
 		// stores it back for that seat on the way out.
