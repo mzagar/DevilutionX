@@ -728,6 +728,12 @@ struct SeatUiContext {
 	{
 		if (!active_)
 			return;
+		// Anything the click changed inside that seat's UI belongs to that seat,
+		// not to the shared seat-0 flags that are about to be restored.
+		gbLocalCoopInvFlag[seat_] = invflag;
+		gbLocalCoopCharFlag[seat_] = CharFlag;
+		gbLocalCoopSpellbookFlag[seat_] = SpellbookFlag;
+		gbLocalCoopQuestLogOpen[seat_] = QuestLogIsOpen;
 		gbLocalCoopCursor[seat_] = MousePosition;
 		MousePosition = savedCursor_;
 		MyPlayer = savedMyPlayer_;

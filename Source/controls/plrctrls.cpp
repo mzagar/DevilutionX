@@ -2359,6 +2359,11 @@ void ProcessSeatPanelInput(uint8_t seat, Player &player, AxisDirection dir, bool
 		gbLocalCoopQuestLogOpen[seat] = false;
 	}
 
+	// Persist whatever the seat's input changed in its own panel state.
+	gbLocalCoopInvFlag[seat] = invflag;
+	gbLocalCoopCharFlag[seat] = CharFlag;
+	gbLocalCoopSpellbookFlag[seat] = SpellbookFlag;
+	gbLocalCoopQuestLogOpen[seat] = QuestLogIsOpen;
 	gbLocalCoopCursor[seat] = MousePosition;
 
 	MousePosition = savedCursor;
