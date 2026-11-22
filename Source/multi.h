@@ -53,6 +53,9 @@ extern uint8_t gbLocalCoopSender;
 extern bool gbLocalCoopAutoStart;
 // Split each local seat into its own viewport (shared panel) instead of one camera.
 extern bool gbLocalCoopSplitScreen;
+// One-shot seat count chosen in the lobby (0 = use the Settings option).
+// Cleared once a session has started so later Single Player sessions are single.
+extern uint8_t gbLocalCoopLobbySeats;
 extern bool gbLocalCoopResume;
 
 // Per-seat hero save slot numbers (set by the lobby, used by InitLocalCoop).

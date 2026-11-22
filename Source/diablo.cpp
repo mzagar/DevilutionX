@@ -2859,6 +2859,8 @@ bool StartGame(bool bNewGame, bool bSinglePlayer)
 			gbRunGameResult = true;
 			break;
 		}
+		// The lobby seat count applies to this session only.
+		gbLocalCoopLobbySeats = 0;
 
 		// Save 2.8 MiB of RAM by freeing all main menu resources
 		// before starting the game.

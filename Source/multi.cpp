@@ -81,6 +81,7 @@ uint8_t gbLocalCoopSeats;
 uint8_t gbLocalCoopSender;
 bool gbLocalCoopAutoStart;
 bool gbLocalCoopSplitScreen;
+uint8_t gbLocalCoopLobbySeats;
 bool gbLocalCoopResume;
 uint32_t gbLocalCoopSaveSlot[4] = {};
 bool gbLocalCoopAutomapActive[4] = {};
@@ -585,10 +586,12 @@ void LoadLocalCoopSettings()
 	gbLocalCoopAutoStart = false;
 	gbLocalCoopSplitScreen = false;
 
-	// The Settings -> Gameplay option is authoritative. local_coop.ini can
-	// override the seat count for scripted console tests and carries the
-	// AutoStart/SplitScreen dev switches.
+	// The Settings -> Gameplay option is the default. A lobby choice overrides it
+	// for exactly one session, and local_coop.ini can override it for scripted
+	// console tests (it also carries the AutoStart/SplitScreen dev switches).
 	int seats = static_cast<int>(*GetOptions().Gameplay.localCoopPlayers);
+	if (gbLocalCoopLobbySeats >= 2)
+		seats = gbLocalCoopLobbySeats;
 	bool autoStart = false;
 	bool splitScreen = true;
 

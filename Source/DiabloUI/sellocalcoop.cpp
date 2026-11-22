@@ -194,7 +194,7 @@ bool UiLocalCoopLobbyDialog()
 			    _("A saved local co-op session was found. Resume it?").data());
 			if (resume) {
 				// The descriptor has restored gbLocalCoopSeats and gbLocalCoopSaveSlot
-				GetOptions().Gameplay.localCoopPlayers.SetValue(static_cast<LocalCoopPlayers>(gbLocalCoopSeats));
+				gbLocalCoopLobbySeats = gbLocalCoopSeats;
 				LoadLocalCoopSettings();
 				gbLocalCoopResume = true;
 				return true;
@@ -245,8 +245,9 @@ bool UiLocalCoopLobbyDialog()
 		}
 	}
 
-	// Step 3: configure the session
-	GetOptions().Gameplay.localCoopPlayers.SetValue(static_cast<LocalCoopPlayers>(seats));
+	// Step 3: configure the session. This is a one-shot override: the Settings
+	// option is left alone so a later Single Player start is single player.
+	gbLocalCoopLobbySeats = static_cast<uint8_t>(seats);
 	LoadLocalCoopSettings();
 	gbLocalCoopSeats = static_cast<uint8_t>(seats);
 
