@@ -11,6 +11,21 @@ a **save/load that resumes the co-op session exactly where it stopped**.
 Real Wii U with real controllers and a proper console UX is the acceptance
 target; Cemu remains the fast loop.
 
+## Building a release ZIP
+
+```bash
+git clone https://github.com/mzagar/DevilutionX && cd DevilutionX
+git checkout wiiu-splitscreen
+make dist        # -> dist/devilutionx-wiiu-splitscreen-<sha>.zip
+```
+
+`make dist` builds the WUHB and packages it for an Aroma SD card under
+`wiiu/apps/devilutionx-splitscreen/` (this branch's `WIIU_APP_DIR_NAME`
+default), so the local co-op build installs next to the regular port with its
+own saves, config and retail data. No Cemu and no retail game data are
+involved; `smpq` or Docker is needed for the Hellfire mod, and the shareware
+`spawn.mpq` is downloaded on the first run.
+
 ## What already works (verified in Cemu)
 
 - `InitLocalCoop(seats)`: one shared world, one hero per seat, single-player
