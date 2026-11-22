@@ -2,7 +2,11 @@
 # Wii U: configure (first run) -> build -> relink unstripped -> tweq patch ->
 # package (Aroma-layout WUHB) -> run in Cemu -> dump log.
 #
-# Usage: tools/wiiu/wiiu-run.sh [seconds_to_run] [--no-build]
+# Usage: tools/wiiu/wiiu-run.sh [seconds_to_run] [--no-build] [--no-run]
+#
+#   --no-build  skip compiling (package the existing ELF/WUHB)
+#   --no-run    stop after packaging; do not launch Cemu (used by
+#               tools/wiiu/build-release.sh)
 #
 # Environment overrides:
 #   WIIU_BUILD_DIR  build directory   (default: <repo>/build-wiiu-release)
@@ -20,7 +24,13 @@
 set -u
 SECS=${1:-40}
 DO_BUILD=1
-[ "${2:-}" = "--no-build" ] && DO_BUILD=0
+DO_RUN=1
+for arg in "$@"; do
+  case "$arg" in
+    --no-build) DO_BUILD=0 ;;
+    --no-run) DO_RUN=0 ;;
+  esac
+done
 
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 BUILD=${WIIU_BUILD_DIR:-$REPO/build-wiiu-release}
@@ -72,6 +82,11 @@ python3 "$REPO/tools/wiiu/cemu-tweq-workaround.py" devilutionx.elf | tail -3
 
 WUHB=$BUILD/devilutionx.wuhb
 WIIU_BUILD_DIR="$BUILD" "$REPO/tools/wiiu/package-wuhb.sh" "$WUHB" || { echo "PACKAGING FAILED"; exit 1; }
+
+if [ "$DO_RUN" = 0 ]; then
+  echo "skipping the Cemu launch (--no-run)"
+  exit 0
+fi
 
 CEMU_ARGS=(-g "$WUHB")
 if [ -n "$MLC" ]; then
