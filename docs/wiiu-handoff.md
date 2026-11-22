@@ -38,6 +38,21 @@ tools/wiiu/wiiu-run.sh 40              # configure → build → patch → packa
 tools/wiiu/wiiu-run.sh 40 --no-build   # re-run without rebuilding
 ```
 
+**Release build (no Cemu needed, fresh-clone friendly):**
+
+```bash
+git clone https://github.com/mzagar/DevilutionX && cd DevilutionX
+git checkout wiiu
+make dist        # -> dist/devilutionx-wiiu-<sha>.zip, ready for an Aroma SD card
+```
+
+`make dist` (or `tools/wiiu/build-release.sh`) configures, builds, packs the
+Hellfire mod, tweq-patches, packages the WUHB and writes a zip containing
+`wiiu/apps/devilutionx/devilutionx.wuhb` plus `README.txt`, `FULL-GAME.txt`,
+`BUILD-INFO.txt` and `LICENSE.md`. The shareware `spawn.mpq` is downloaded on
+the first run; `smpq` or Docker is needed for the Hellfire mod. See
+[`tools/wiiu/README.md`](../tools/wiiu/README.md) for the other scripts.
+
 ### From a fresh clone
 
 Prerequisites:
