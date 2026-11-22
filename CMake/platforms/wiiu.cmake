@@ -41,5 +41,10 @@ set(DEVILUTIONX_DISABLE_EXCEPTIONS OFF)
 set(PIE OFF)
 set(CMAKE_POSITION_INDEPENDENT_CODE OFF)
 
+# SD-card directory this build owns (sd:/wiiu/apps/<name>/). Set it to ship
+# two builds side by side on one SD card, e.g.
+#   -DWIIU_APP_DIR_NAME=devilutionx-splitscreen
+set(WIIU_APP_DIR_NAME "devilutionx" CACHE STRING "SD data directory name under sd:/wiiu/apps/")
+
 list(APPEND DEVILUTIONX_PLATFORM_SUBDIRECTORIES platform/wiiu)
 list(APPEND DEVILUTIONX_PLATFORM_LINK_LIBRARIES libdevilutionx_wiiu)

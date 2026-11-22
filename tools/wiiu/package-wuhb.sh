@@ -24,6 +24,8 @@
 #   WIIU_ASSETS_DIR  built assets dir     (default: <build>/assets)
 #   WIIU_ICON        128x128 icon png     (default: <repo>/Packaging/wiiu/icon.png)
 #   WIIU_HF_MPQ      packed Hellfire mod   (default: <build>/mods/hf.mpq)
+#   WIIU_APP_NAME     WUHB long name        (default: DevilutionX)
+#   WIIU_APP_SHORT_NAME  WUHB short name    (default: same as WIIU_APP_NAME)
 #   DEVKITPRO        devkitPro root       (default: /opt/devkitpro)
 #
 # Note: the ELF must already be tweq-patched (see cemu-tweq-workaround.py) —
@@ -85,8 +87,10 @@ else
   echo "         run tools/wiiu/build-hf-mpq.sh first" >&2
 fi
 
+APP_NAME=${WIIU_APP_NAME:-DevilutionX}
+APP_SHORT_NAME=${WIIU_APP_SHORT_NAME:-$APP_NAME}
 ARGS=( "$BUILD/devilutionx.rpx" "$OUT" --content="$STAGE" \
-       --name "DevilutionX" --author "Devilution Team" )
+       --name "$APP_NAME" --short-name "$APP_SHORT_NAME" --author "Devilution Team" )
 if [ -f "$ICON" ]; then
   ARGS+=( --icon="$ICON" )
 fi

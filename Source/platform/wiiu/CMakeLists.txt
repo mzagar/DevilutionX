@@ -22,6 +22,9 @@ endif()
 
 add_devilutionx_object_library(libdevilutionx_wiiu ${wiiu_platform_sources})
 
+# Where this build keeps its config, saves and game data on the SD card.
+target_compile_definitions(libdevilutionx_wiiu PRIVATE WIIU_APP_DIR_NAME="${WIIU_APP_DIR_NAME}")
+
 # Linking asio is what puts Source/platform/wiiu/asio/include on this target's
 # include path (see CMake/platforms/wiiu/asio_defs.cmake).
 if(NOT NONET)

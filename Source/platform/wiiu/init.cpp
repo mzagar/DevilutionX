@@ -63,7 +63,14 @@ namespace {
 /// Read-only game data bundled into the WUHB (`wuhbtool --content`).
 constexpr const char *ContentAssetsPath = "/vol/content/assets";
 /// Writable directory on the SD card (created on first run).
-constexpr const char *SdDataPath = "/vol/external01/wiiu/apps/devilutionx";
+///
+/// The name is a build-time knob so two builds (for example the regular port
+/// and the local co-op branch) can live side by side on one SD card with their
+/// own config, saves and game data. See WIIU_APP_DIR_NAME.
+#ifndef WIIU_APP_DIR_NAME
+#define WIIU_APP_DIR_NAME "devilutionx"
+#endif
+constexpr const char *SdDataPath = "/vol/external01/wiiu/apps/" WIIU_APP_DIR_NAME;
 /// Name of the SD-card copy of the boot log.
 constexpr const char *DiagFileName = "boot-diag.txt";
 
